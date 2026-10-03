@@ -21,7 +21,7 @@ define('DB_CHARSET', 'utf8mb4');
 define('DB_PORT', 3306);
 
 define('SITE_NAME', 'Alondes Cda Dorm');
-define('SITE_EMAIL', 'alondescdadorm@gmail.com');
+define('SITE_EMAIL', 'tvillaruel39@gmail.com');
 
 define('UPLOAD_PATH', __DIR__ . '/../uploads/');
 define('UPLOAD_URL', SITE_URL . '/uploads/');

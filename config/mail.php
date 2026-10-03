@@ -22,7 +22,7 @@ define('MAIL_HOST', 'smtp.gmail.com');
 define('MAIL_PORT', 587);
 define('MAIL_ENCRYPTION', 'tls'); // PHPMailer::ENCRYPTION_STARTTLS
 define('MAIL_AUTH', true);
-define('MAIL_USERNAME', 'alondescdadorm@gmail.com');
+define('MAIL_USERNAME', 'tvillaruel39@gmail.com');
 define('MAIL_PASSWORD', 'vrpg xctm fbbr crbr');
-define('MAIL_FROM_EMAIL', 'alondescdadorm@gmail.com');
+define('MAIL_FROM_EMAIL', 'tvillaruel39@gmail.com');
 define('MAIL_FROM_NAME', 'ALONDES CDA DORM');
