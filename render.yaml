@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: student-boarding-house-python
+    runtime: python
+    plan: free
+    region: singapore
+    buildCommand: pip install -r python_dashboard/requirements.txt
+    startCommand: gunicorn --chdir python_dashboard -c gunicorn.conf.py wsgi:app
+    envVars:
+      - key: FLASK_ENV
+        value: production
+      - key: PYTHON_VERSION
+        value: 3.10.12
+      - key: FLASK_SECRET_KEY
+        generateValue: true
+      - key: DB_HOST
+        value: localhost
+      - key: DB_PORT
+        value: "3306"
+      - key: DB_NAME
+        value: despierisXcN_HAHA
+      - key: DB_USER
+        value: despierisXcN_HAHA
+      - key: DB_PASSWORD
+        value: 8 Ball Pool
+      - key: SESSION_COOKIE_SECURE
+        value: "false"
+      - key: LOG_LEVEL
+        value: INFO

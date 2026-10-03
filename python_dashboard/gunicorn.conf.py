@@ -1,9 +1,9 @@
-# Gunicorn configuration for production
-
+import os
 import multiprocessing
 
 # Server socket
-bind = "0.0.0.0:5000"
+port = os.environ.get('PORT', '5000')
+bind = f"0.0.0.0:{port}"
 backlog = 2048
 
 # Worker processes
@@ -18,8 +18,8 @@ max_requests = 1000
 max_requests_jitter = 100
 
 # Logging
-accesslog = "logs/access.log"
-errorlog = "logs/error.log"
+accesslog = "-"
+errorlog = "-"
 loglevel = "info"
 access_log_format = '%(h)s %(l)s %(u)s %(t)s "%(r)s" %(s)s %(b)s "%(f)s" "%(a)s" %(D)s'
 
@@ -28,9 +28,6 @@ proc_name = "student_boarding_house_dashboard"
 
 # Daemon mode (set to False when using systemd/supervisor)
 daemon = False
-
-# PID file
-pidfile = "logs/gunicorn.pid"
 
 # User/group (adjust for your deployment)
 # user = "www-data"

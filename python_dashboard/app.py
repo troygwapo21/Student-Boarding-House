@@ -35,8 +35,22 @@ def create_app(config_name=None):
     register_error_handlers(app)
     register_cli_commands(app)
     
+    @app.route('/')
+    def index():
+        if 'user_id' in session:
+            from blueprints.auth.routes import redirect_based_on_role
+            return redirect_based_on_role()
+        return redirect(url_for('auth.login'))
+
+    @app.route('/health')
+    def health():
+        return jsonify(status='ok', service='python_dashboard')
+    
     with app.app_context():
-        init_db_pool()
+        try:
+            init_db_pool()
+        except Exception as e:
+            app.logger.warning(f"DB pool startup notice: {e}")
     
     return app
 
@@ -181,8 +195,15 @@ def register_template_globals(app):
 def register_request_handlers(app):
     @app.before_request
     def before_request():
-        g.db = get_db()
         g.request_start_time = datetime.now()
+        g.db = None
+        if request.endpoint and ('static' in request.endpoint or request.endpoint in ('health', 'index')):
+            return
+        try:
+            g.db = get_db()
+        except Exception as e:
+            app.logger.debug(f'Database connection skipped or unavailable in before_request: {e}')
+            g.db = None
         
         if request.endpoint and 'static' not in request.endpoint:
             app.logger.debug(f'{request.method} {request.path}')
@@ -284,33 +305,47 @@ def init_db_pool():
     
     cfg = config[os.environ.get('FLASK_ENV', 'default')]
     
-    _db_pool = PooledDB(
-        creator=pymysql,
-        maxconnections=20,
-        mincached=2,
-        maxcached=5,
-        blocking=True,
-        host=cfg.DB_HOST,
-        port=cfg.DB_PORT,
-        user=cfg.DB_USER,
-        password=cfg.DB_PASSWORD,
-        database=cfg.DB_NAME,
-        charset='utf8mb4',
-        cursorclass=pymysql.cursors.DictCursor,
-        autocommit=True,
-    )
+    try:
+        _db_pool = PooledDB(
+            creator=pymysql,
+            maxconnections=20,
+            mincached=0,
+            maxcached=5,
+            blocking=True,
+            host=cfg.DB_HOST,
+            port=cfg.DB_PORT,
+            user=cfg.DB_USER,
+            password=cfg.DB_PASSWORD,
+            database=cfg.DB_NAME,
+            charset='utf8mb4',
+            cursorclass=pymysql.cursors.DictCursor,
+            autocommit=True,
+            connect_timeout=4,
+        )
+    except Exception as e:
+        _db_pool = None
+        logging.getLogger(__name__).warning(f"Database pool initialization deferred: {e}")
 
 
 def get_db():
     global _db_pool
     if _db_pool is None:
         init_db_pool()
-    return _db_pool.connection()
+    if _db_pool is not None:
+        try:
+            return _db_pool.connection()
+        except Exception as e:
+            logging.getLogger(__name__).warning(f"Failed to obtain connection from pool: {e}")
+            return None
+    return None
 
 
 def execute_query(query, params=None, fetch=True, commit=False):
-    conn = get_db()
+    conn = None
     try:
+        conn = get_db()
+        if conn is None:
+            return [] if fetch else 0
         with conn.cursor() as cursor:
             cursor.execute(query, params or ())
             if commit:
@@ -319,10 +354,19 @@ def execute_query(query, params=None, fetch=True, commit=False):
                 return cursor.fetchall()
             return cursor.rowcount
     except Exception as e:
-        conn.rollback()
-        raise
+        logging.getLogger(__name__).error(f"execute_query error: {e}")
+        if commit and conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        return [] if fetch else 0
     finally:
-        conn.close()
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 
 def execute_one(query, params=None):
