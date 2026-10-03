@@ -1,0 +1,53 @@
+name: Deploy to AgilaHost
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  web-deploy:
+    name: 🚀 Auto Deploy to AgilaHost
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🚚 Checkout latest code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: 🔍 Detect FTP Target Directory
+        id: detect
+        run: |
+          python3 -c "
+          import ftplib, os
+          ftp = ftplib.FTP('${{ secrets.FTP_SERVER }}')
+          ftp.login('${{ secrets.FTP_USERNAME }}', '${{ secrets.FTP_PASSWORD }}')
+          print('Connected! Current directory:', ftp.pwd())
+          files = ftp.nlst()
+          print('Listing in root:', files)
+          
+          target = '/'
+          if 'public_html' in files:
+              target = 'public_html/'
+          elif 'web' in files:
+              target = 'web/fab-cafe.gleeze.com/public_html/'
+          
+          print('Auto-detected target directory:', target)
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f'target={target}\n')
+          ftp.quit()
+          "
+
+      - name: 📂 Sync files to AgilaHost
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          server-dir: ${{ steps.detect.outputs.target }}
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/storage/backups/*.sql
+            **/README.md
+            **/PROPOSAL_DOCUMENT.md
