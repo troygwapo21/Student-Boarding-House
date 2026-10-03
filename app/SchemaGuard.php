@@ -122,12 +122,20 @@ class SchemaGuard {
     // ------------------------------------------------------------------
     private static function guardReservations(Database $db): void {
         self::ensureColumns($db, 'reservations', [
+            'moved_in_at'  => 'DATETIME DEFAULT NULL',
             'move_in_time' => 'TIME DEFAULT NULL',
             'rent_amount'  => 'DECIMAL(10,2) DEFAULT NULL',
         ], [
+            'moved_in_at'  => 'move_in_date',
             'move_in_time' => 'move_in_date',
             'rent_amount'  => 'expected_duration',
         ]);
+
+        try {
+            $db->query("UPDATE `reservations` SET `moved_in_at` = COALESCE(`approved_at`, `created_at`) WHERE `status` = 'approved' AND `moved_in_at` IS NULL");
+        } catch (\Throwable $e) {
+            error_log('SchemaGuard: backfill reservations.moved_in_at - ' . $e->getMessage());
+        }
     }
 
     // ------------------------------------------------------------------
@@ -192,6 +200,9 @@ class SchemaGuard {
             if (!self::createTable($db, 'guardians', self::ddlGuardiansWithFk())) {
                 self::createTable($db, 'guardians', self::ddlGuardiansWithoutFk());
             }
+        }
+        if (!in_array('refund_requests', $existing, true)) {
+            self::createTable($db, 'refund_requests', self::ddlRefundRequests());
         }
     }
 
@@ -290,6 +301,28 @@ class SchemaGuard {
             PRIMARY KEY (`id`),
             KEY `idx_guardians_student` (`student_id`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
+    }
+
+    private static function ddlRefundRequests(): string {
+        return "CREATE TABLE IF NOT EXISTS `refund_requests` (
+            `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+            `refund_code` VARCHAR(20) NOT NULL,
+            `student_id` INT UNSIGNED NOT NULL,
+            `reservation_id` INT UNSIGNED DEFAULT NULL,
+            `amount` DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+            `reason` TEXT NOT NULL,
+            `status` ENUM('pending','approved','rejected','cancelled') NOT NULL DEFAULT 'pending',
+            `admin_notes` TEXT DEFAULT NULL,
+            `reviewed_by` INT UNSIGNED DEFAULT NULL,
+            `reviewed_at` TIMESTAMP NULL DEFAULT NULL,
+            `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`),
+            UNIQUE KEY `uk_refund_code` (`refund_code`),
+            KEY `idx_refunds_student` (`student_id`),
+            KEY `idx_refunds_reservation` (`reservation_id`),
+            KEY `idx_refunds_status` (`status`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
     }
 
     // ------------------------------------------------------------------
