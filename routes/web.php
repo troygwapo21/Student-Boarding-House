@@ -20,7 +20,6 @@ Router::get('/privacy', HomeController::class, 'privacy');
 Router::get('/terms', HomeController::class, 'terms');
 Router::get('/announcements', HomeController::class, 'announcements');
 Router::get('/announcement/{id}', HomeController::class, 'announcementDetail');
-Router::get('/api/py-check', HomeController::class, 'pyTest');
 
 // ============================================================
 // AUTH ROUTES

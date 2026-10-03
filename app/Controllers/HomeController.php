@@ -2,26 +2,6 @@
 
 class HomeController extends Controller {
 
-    public function pyTest(): void {
-        header('Content-Type: application/json');
-        $disabled = explode(',', ini_get('disable_functions'));
-        $disabled = array_map('trim', $disabled);
-        $canExec = !in_array('exec', $disabled) && function_exists('exec');
-        $canShell = !in_array('shell_exec', $disabled) && function_exists('shell_exec');
-        $pyVersion = null;
-        if ($canExec) {
-            @exec('python3 --version 2>&1', $out, $ret);
-            $pyVersion = implode("\n", (array)$out);
-        }
-        echo json_encode([
-            'can_exec' => $canExec,
-            'can_shell' => $canShell,
-            'py_version' => $pyVersion,
-            'disabled' => $disabled
-        ]);
-        exit;
-    }
-
     public function index(): void {
         $this->reconcileRoomStatuses();
         $data = [
