@@ -328,10 +328,6 @@
             <a href="<?= url('/admin/analytics') ?>" class="nav-link <?= strpos($currentUrl, '/admin/analytics') !== false ? 'active' : '' ?>">
                 <i class="fas fa-chart-line"></i><span>Analytics</span>
             </a>
-            <a href="https://student-boarding-house-python.onrender.com" target="_blank" rel="noopener noreferrer" class="nav-link" title="Open Python Flask Analytics">
-                <i class="fab fa-python" style="color: #38bdf8;"></i><span>Python Analytics</span>
-                <span class="sidebar-badge badge-info" style="background: rgba(56, 189, 248, 0.2); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.4);">Cloud</span>
-            </a>
             <a href="<?= url('/admin/notifications') ?>" class="nav-link <?= strpos($currentUrl, '/admin/notification') !== false ? 'active' : '' ?>">
                 <i class="fas fa-bell"></i><span>Notifications</span>
                 <span class="sidebar-badge badge-danger" data-module-badge="notifications" style="<?= empty($unreadNotifications) || $unreadNotifications <= 0 ? 'display:none' : '' ?>"><?= $unreadNotifications > 99 ? '99+' : $unreadNotifications ?></span>
