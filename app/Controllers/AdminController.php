@@ -40,10 +40,25 @@ class AdminController extends Controller {
         $lastWeekRevenue = (float)($this->db->fetch("SELECT COALESCE(SUM(amount_paid - COALESCE(refunded_amount, 0)), 0) AS total FROM payments WHERE status IN ('paid','partially_paid','refunded') AND amount_paid > 0 AND YEARWEEK(COALESCE(paid_at, created_at), 1) = YEARWEEK(CURDATE(), 1) - 1")['total'] ?? 0);
         $avgMonthlyRevenue = (float)($this->db->fetch("SELECT COALESCE(AVG(m.total), 0) AS avg_total FROM (SELECT DATE_FORMAT(COALESCE(paid_at, created_at), '%Y-%m') AS ym, SUM(amount_paid - COALESCE(refunded_amount,0)) AS total FROM payments WHERE status IN ('paid','partially_paid','refunded') AND amount_paid > 0 GROUP BY ym) m")['avg_total'] ?? 0);
         $bestMonth = $this->db->fetch("SELECT DATE_FORMAT(COALESCE(paid_at, created_at), '%M %Y') AS label, SUM(amount_paid - COALESCE(refunded_amount,0)) AS total FROM payments WHERE status IN ('paid','partially_paid','refunded') AND amount_paid > 0 GROUP BY DATE_FORMAT(COALESCE(paid_at, created_at), '%Y-%m') ORDER BY total DESC LIMIT 1");
-        $revenueByMethod = $this->db->fetchAll("SELECT COALESCE(NULLIF(payment_method,''), 'cash') AS method, SUM(amount_paid - COALESCE(refunded_amount,0)) AS total FROM payments WHERE status IN ('paid','partially_paid','refunded') AND amount_paid > 0 GROUP BY COALESCE(NULLIF(payment_method,''),'cash')");
-        $revenueByType = $this->db->fetchAll("SELECT payment_type, SUM(amount_paid - COALESCE(refunded_amount,0)) AS total FROM payments WHERE status IN ('paid','partially_paid','refunded') AND amount_paid > 0 AND MONTH(COALESCE(paid_at, created_at)) = MONTH(CURDATE()) AND YEAR(COALESCE(paid_at, created_at)) = YEAR(CURDATE()) GROUP BY payment_type");
-        $roomTypeStats = $this->db->fetchAll("SELECT room_type, COUNT(*) AS total_rooms, SUM(CASE WHEN status = 'occupied' THEN 1 ELSE 0 END) AS occupied, SUM(current_occupancy) AS occupied_beds, SUM(max_capacity) AS capacity FROM rooms GROUP BY room_type");
-        $studentsByGender = $this->db->fetchAll("SELECT COALESCE(NULLIF(gender,''), 'other') AS gender, COUNT(*) AS c FROM students GROUP BY COALESCE(NULLIF(gender,''),'other')");
+        $analyticsPaymentRows = $this->db->fetchAll(
+            "SELECT payment_method AS method, amount_paid, COALESCE(refunded_amount, 0) AS refunded_amount, status
+             FROM payments
+             WHERE status IN ('paid','partially_paid','refunded') AND amount_paid > 0"
+        );
+        $analyticsChartPaymentRows = $this->db->fetchAll(
+            "SELECT COALESCE(paid_at, created_at) AS paid_at, amount_paid, COALESCE(refunded_amount, 0) AS refunded_amount, status, payment_type
+             FROM payments
+             WHERE status IN ('paid','partially_paid','refunded') AND amount_paid > 0
+             AND COALESCE(paid_at, created_at) >= DATE_SUB(DATE_FORMAT(CURDATE(), '%Y-%m-01'), INTERVAL 11 MONTH)"
+        );
+        $analyticsReservationRows = $this->db->fetchAll(
+            "SELECT created_at FROM reservations
+             WHERE created_at >= DATE_SUB(DATE_FORMAT(CURDATE(), '%Y-%m-01'), INTERVAL 11 MONTH)"
+        );
+        $analyticsRoomRows = $this->db->fetchAll(
+            "SELECT room_type, status, current_occupancy, max_capacity FROM rooms"
+        );
+        $analyticsStudentRows = $this->db->fetchAll("SELECT gender FROM students");
         $studentsByYear = $this->db->fetchAll("SELECT COALESCE(NULLIF(year_level,''), 'N/A') AS year_level, COUNT(*) AS c FROM students GROUP BY COALESCE(NULLIF(year_level,''),'N/A') ORDER BY c DESC LIMIT 6");
         $newStudentsThisMonth = $this->db->count('students', "created_at >= DATE_FORMAT(CURDATE(), '%Y-%m-01')");
         $newReservationsThisMonth = $this->db->count('reservations', "created_at >= DATE_FORMAT(CURDATE(), '%Y-%m-01')");
@@ -73,6 +88,12 @@ class AdminController extends Controller {
             'lastWeekRevenue' => $lastWeekRevenue,
             'avgMonthlyRevenue' => $avgMonthlyRevenue,
             'bestMonth' => $bestMonth,
+            'analyticsAsOfDate' => serverDate('Y-m-d'),
+            'analyticsPaymentRows' => $analyticsPaymentRows,
+            'analyticsChartPaymentRows' => $analyticsChartPaymentRows,
+            'analyticsReservationRows' => $analyticsReservationRows,
+            'analyticsRoomRows' => $analyticsRoomRows,
+            'analyticsStudentRows' => $analyticsStudentRows,
             'totalCapacity' => $totalCapacity,
             'totalOccupiedBeds' => $totalOccupiedBeds,
             'bedOccupancyRate' => $bedOccupancyRate,
