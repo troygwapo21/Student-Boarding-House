@@ -1,0 +1,333 @@
+{% extends 'shared/base.html' %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2"><i class="fas fa-tachometer-alt me-2 text-primary"></i>My Dashboard</h1>
+</div>
+
+<!-- Welcome Card -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card bg-gradient-primary text-white" style="background: linear-gradient(135deg, #6366f1, #8b5cf6) !important;">
+            <div class="card-body">
+                <div class="row align-items-center">
+                    <div class="col-md-8">
+                        <h4 class="mb-1">Welcome back, {{ student.first_name }}! 👋</h4>
+                        <p class="mb-0 opacity-75">Here's your boarding house overview</p>
+                    </div>
+                    <div class="col-md-4 text-md-end">
+                        {% if active_reservation %}
+                        <div class="badge bg-white text-primary fs-6 px-3 py-2">
+                            <i class="fas fa-door-open me-1"></i>Room {{ active_reservation.room_number }}
+                        </div>
+                        {% else %}
+                        <div class="badge bg-white text-warning fs-6 px-3 py-2">
+                            <i class="fas fa-search me-1"></i>No active reservation
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Stats Cards -->
+<div class="row mb-4">
+    <div class="col-xl-3 col-md-6 mb-3">
+        <div class="card stat-card bg-primary text-white h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6 class="card-title text-white-50">Pending Payments</h6>
+                        <h2 class="card-text">{{ pending_payments }}</h2>
+                    </div>
+                    <i class="fas fa-clock fa-3x opacity-50"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-3 col-md-6 mb-3">
+        <div class="card stat-card bg-danger text-white h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6 class="card-title text-white-50">Overdue</h6>
+                        <h2 class="card-text">{{ overdue_payments }}</h2>
+                    </div>
+                    <i class="fas fa-exclamation-triangle fa-3x opacity-50"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-3 col-md-6 mb-3">
+        <div class="card stat-card bg-success text-white h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6 class="card-title text-white-50">Total Paid</h6>
+                        <h2 class="card-text">{{ total_paid | currency }}</h2>
+                    </div>
+                    <i class="fas fa-check-circle fa-3x opacity-50"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-3 col-md-6 mb-3">
+        <div class="card stat-card bg-info text-white h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6 class="card-title text-white-50">Completed Payments</h6>
+                        <h2 class="card-text">{{ total_payments }}</h2>
+                    </div>
+                    <i class="fas fa-receipt fa-3x opacity-50"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Active Reservation & Payment Trend -->
+<div class="row mb-4">
+    <div class="col-xl-8 mb-3">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="fas fa-chart-line me-2"></i>Payment Trend (6 Months)</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="paymentTrendChart" height="300"></canvas>
+            </div>
+        </div>
+    </div>
+    {% if active_reservation %}
+    <div class="col-xl-4 mb-3">
+        <div class="card h-100 border-primary">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="fas fa-door-open me-2"></i>My Room</h5>
+            </div>
+            <div class="card-body">
+                {% if active_reservation.primary_image %}
+                <div class="text-center mb-3">
+                    <img src="{{ url_for('static', filename='uploads/' ~ active_reservation.primary_image) }}" alt="{{ active_reservation.room_name }}" class="img-fluid rounded" style="max-height: 150px;">
+                </div>
+                {% endif %}
+                <h4 class="text-primary">{{ active_reservation.room_name }}</h4>
+                <p class="text-muted mb-2">Room {{ active_reservation.room_number }}</p>
+                <div class="row text-center mb-3">
+                    <div class="col-6">
+                        <div class="fw-bold text-primary">{{ active_reservation.monthly_rent | currency }}</div>
+                        <small class="text-muted">Monthly Rent</small>
+                    </div>
+                    <div class="col-6">
+                        <div class="fw-bold text-success">{{ total_paid | currency }}</div>
+                        <small class="text-muted">Total Paid</small>
+                    </div>
+                </div>
+                <div class="d-grid gap-2">
+                    <a href="{{ url_for('student.payments') }}" class="btn btn-primary"><i class="fas fa-money-bill-wave me-1"></i>View Payments</a>
+                    <a href="{{ url_for('student.receipts') }}" class="btn btn-outline-secondary"><i class="fas fa-receipt me-1"></i>View Receipts</a>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="col-xl-4 mb-3">
+        <div class="card h-100 border-warning">
+            <div class="card-header bg-warning text-dark">
+                <h5 class="mb-0"><i class="fas fa-search me-2"></i>Find a Room</h5>
+            </div>
+            <div class="card-body text-center py-5">
+                <i class="fas fa-door-open fa-4x text-muted mb-3"></i>
+                <h5>No Active Reservation</h5>
+                <p class="text-muted">Browse available rooms and make a reservation</p>
+                <a href="{{ url_for('student.reservations') }}" class="btn btn-warning"><i class="fas fa-plus me-1"></i>Browse Rooms</a>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Upcoming Payments & Recent Activity -->
+<div class="row mb-4">
+    <div class="col-xl-6 mb-3">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="fas fa-calendar-alt me-2"></i>Upcoming Payments</h5>
+                <a href="{{ url_for('student.payments') }}" class="btn btn-sm btn-outline-primary">View All</a>
+            </div>
+            <div class="card-body p-0">
+                {% if upcoming_payments %}
+                <div class="list-group list-group-flush">
+                    {% for p in upcoming_payments %}
+                    <div class="list-group-item d-flex justify-content-between align-items-center">
+                        <div>
+                            <div class="fw-bold">{{ p.payment_type | replace('_', ' ') | title }}</div>
+                            <small class="text-muted">{{ p.room_number or 'Room' }} • Due: {{ p.due_date | date_format }}</small>
+                        </div>
+                        <div class="text-end">
+                            <span class="fw-bold text-{% if p.status == 'overdue' %}danger{% else %}warning{% endif %}">{{ p.amount | currency }}</span>
+                            {{ p.status | status_badge | safe }}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="text-center text-muted py-4">No upcoming payments</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-6 mb-3">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="fas fa-bell me-2"></i>Recent Notifications</h5>
+                <a href="{{ url_for('student.notifications') }}" class="btn btn-sm btn-outline-primary">View All</a>
+            </div>
+            <div class="card-body p-0">
+                {% if notifications %}
+                <div class="list-group list-group-flush">
+                    {% for n in notifications %}
+                    <div class="list-group-item">
+                        <div class="d-flex justify-content-between">
+                            <h6 class="mb-1">{{ n.title }}</h6>
+                            <small class="text-muted">{{ n.created_at | timeago }}</small>
+                        </div>
+                        <p class="mb-1 small">{{ n.message | truncate(100) }}</p>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="text-center text-muted py-4">No notifications</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Announcements & Maintenance/Complaints -->
+<div class="row">
+    <div class="col-xl-6 mb-3">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="fas fa-bullhorn me-2"></i>Announcements</h5>
+                <a href="{{ url_for('student.announcements') }}" class="btn btn-sm btn-outline-primary">View All</a>
+            </div>
+            <div class="card-body p-0">
+                {% if announcements %}
+                <div class="list-group list-group-flush">
+                    {% for a in announcements %}
+                    <div class="list-group-item">
+                        <div class="d-flex justify-content-between">
+                            <h6 class="mb-1">{{ a.title }}</h6>
+                            <small class="text-muted">{{ a.created_at | date_format }}</small>
+                        </div>
+                        <p class="mb-1 small">{{ a.content | truncate(120) }}</p>
+                        <small>
+                            <span class="badge bg-{% if a.type == 'urgent' %}danger{% elif a.type == 'important' %}warning{% elif a.type == 'maintenance' %}info{% else %}secondary{% endif %}">{{ a.type }}</span>
+                        </small>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="text-center text-muted py-4">No announcements</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-6 mb-3">
+        <div class="card h-100">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-tools me-2"></i>Maintenance & Complaints</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-6">
+                        <h6 class="text-primary"><i class="fas fa-tools me-1"></i>Maintenance</h6>
+                        {% if maintenance_requests %}
+                        <div class="list-group list-group-flush">
+                            {% for m in maintenance_requests %}
+                            <div class="list-group-item px-0">
+                                <div class="fw-bold small">{{ m.title }}</div>
+                                <small class="text-muted">{{ m.category | title }} • {{ m.status | title }} • {{ m.created_at | date_format }}</small>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% else %}
+                        <small class="text-muted">No maintenance requests</small>
+                        {% endif %}
+                    </div>
+                    <div class="col-6">
+                        <h6 class="text-danger"><i class="fas fa-flag me-1"></i>Complaints</h6>
+                        {% if complaints %}
+                        <div class="list-group list-group-flush">
+                            {% for c in complaints %}
+                            <div class="list-group-item px-0">
+                                <div class="fw-bold small">{{ c.subject }}</div>
+                                <small class="text-muted">{{ c.category | title }} • {{ c.status | title }} • {{ c.created_at | date_format }}</small>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% else %}
+                        <small class="text-muted">No complaints</small>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="text-center mt-3">
+                    <a href="{{ url_for('student.maintenance') }}" class="btn btn-sm btn-outline-primary me-2"><i class="fas fa-plus me-1"></i>New Maintenance</a>
+                    <a href="{{ url_for('student.complaints') }}" class="btn btn-sm btn-outline-danger"><i class="fas fa-plus me-1"></i>New Complaint</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const monthlyTrend = {{ monthly_trend | tojson }};
+
+document.addEventListener('DOMContentLoaded', function() {
+    initPaymentTrendChart();
+});
+
+function initPaymentTrendChart() {
+    const ctx = document.getElementById('paymentTrendChart');
+    if (!ctx) return;
+    
+    // Process monthly trend data
+    const monthsMap = {};
+    monthlyTrend.forEach(row => {
+        const key = row.month_key;
+        if (!monthsMap[key]) {
+            monthsMap[key] = { label: row.month_label, paid: 0, pending: 0, overdue: 0 };
+        }
+        monthsMap[key][row.status] = parseFloat(row.total);
+    });
+    
+    const sortedMonths = Object.keys(monthsMap).sort();
+    const labels = sortedMonths.map(k => monthsMap[k].label);
+    const paidData = sortedMonths.map(k => monthsMap[k].paid);
+    const pendingData = sortedMonths.map(k => monthsMap[k].pending);
+    const overdueData = sortedMonths.map(k => monthsMap[k].overdue);
+    
+    new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [
+                { label: 'Paid', data: paidData, backgroundColor: 'rgba(16, 185, 129, 0.8)', borderColor: '#10b981', borderWidth: 1, borderRadius: 4 },
+                { label: 'Pending', data: pendingData, backgroundColor: 'rgba(245, 158, 11, 0.8)', borderColor: '#f59e0b', borderWidth: 1, borderRadius: 4 },
+                { label: 'Overdue', data: overdueData, backgroundColor: 'rgba(239, 68, 68, 0.8)', borderColor: '#ef4444', borderWidth: 1, borderRadius: 4 }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { position: 'top' } },
+            scales: { y: { beginAtZero: true, stacked: true }, x: { stacked: true } }
+        }
+    });
+}
+</script>
+{% endblock %}

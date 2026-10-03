@@ -1,0 +1,57 @@
+{% extends 'shared/base.html' %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2"><i class="fas fa-users me-2 text-primary"></i>Tenants Report</h1>
+    <div class="btn-toolbar mb-2 mb-md-0">
+        <a href="{{ url_for('admin.reports') }}" class="btn btn-outline-secondary btn-sm"><i class="fas fa-arrow-left me-1"></i>Back</a>
+        {% if export %}
+        <span class="btn btn-success btn-sm disabled"><i class="fas fa-check me-1"></i>Exported</span>
+        {% else %}
+        <a href="{{ url_for('admin.reports.tenants', export='csv') }}" class="btn btn-success btn-sm"><i class="fas fa-file-csv me-1"></i>CSV</a>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body p-0">
+        {% if tenants %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Student ID</th>
+                        <th>Name</th>
+                        <th>Email</th>
+                        <th>Room</th>
+                        <th>Move-in Date</th>
+                        <th>Total Paid</th>
+                        <th>Overdue Count</th>
+                        <th>Overdue Amount</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for t in tenants %}
+                    <tr>
+                        <td>{{ t.student_id_number or '-' }}</td>
+                        <td>{{ t.first_name }} {{ t.last_name }}</td>
+                        <td>{{ t.email }}</td>
+                        <td>{{ t.room_number }} - {{ t.room_name }}</td>
+                        <td>{{ t.move_in_date | date_format }}</td>
+                        <td>{{ t.total_paid | currency }}</td>
+                        <td>{{ t.overdue_count }}</td>
+                        <td><span class="text-danger fw-bold">{{ t.overdue_amount | currency }}</span></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5">
+            <i class="fas fa-users fa-3x text-muted mb-3"></i>
+            <h5 class="text-muted">No active tenants</h5>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

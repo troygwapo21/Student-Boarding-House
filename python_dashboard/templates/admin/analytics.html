@@ -1,0 +1,233 @@
+{% extends 'shared/base.html' %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2"><i class="fas fa-chart-line me-2 text-primary"></i>Analytics</h1>
+</div>
+
+<div class="row">
+    <div class="col-xl-8 mb-3">
+        <div class="card h-100">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-chart-area me-2"></i>Monthly Revenue Trend</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="monthlyRevenueChart" height="350"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-4 mb-3">
+        <div class="card h-100">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-chart-pie me-2"></i>Revenue by Type</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="revenueTypeChart" height="350"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mb-3">
+    <div class="col-xl-6 mb-3">
+        <div class="card h-100">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-chart-bar me-2"></i>Occupancy by Room Type</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="occupancyByTypeChart" height="300"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-6 mb-3">
+        <div class="card h-100">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-chart-pie me-2"></i>Payment Methods</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="paymentMethodChart" height="300"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mb-3">
+    <div class="col-xl-6 mb-3">
+        <div class="card h-100">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-users me-2"></i>Student Demographics</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-6">
+                        <h6 class="text-primary">By Gender</h6>
+                        <canvas id="genderChart" height="200"></canvas>
+                    </div>
+                    <div class="col-6">
+                        <h6 class="text-success">By Year Level</h6>
+                        <canvas id="yearLevelChart" height="200"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-6 mb-3">
+        <div class="card h-100">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-calendar-check me-2"></i>Reservation Trends</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="reservationTrendChart" height="300"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-xl-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-building me-2"></i>Boarding House Performance</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover" id="performanceTable">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Room Type</th>
+                                <th>Total Rooms</th>
+                                <th>Occupied</th>
+                                <th>Occupancy Rate</th>
+                                <th>Capacity</th>
+                                <th>Occupied Beds</th>
+                                <th>Revenue</th>
+                            </tr>
+                        </thead>
+                        <tbody id="performanceTableBody">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Load analytics data from API
+    loadAnalyticsData();
+});
+
+async function loadAnalyticsData() {
+    try {
+        const [revenueRes, occupancyRes, paymentsRes, reservationsRes, tenantsRes, performanceRes] = await Promise.all([
+            fetch('/api/analytics/revenue?months=12'),
+            fetch('/api/analytics/occupancy'),
+            fetch('/api/analytics/payments'),
+            fetch('/api/analytics/reservations?months=12'),
+            fetch('/api/analytics/tenants'),
+            fetch('/api/analytics/boarding-house-performance')
+        ]);
+        
+        const revenueData = await revenueRes.json();
+        const occupancyData = await occupancyRes.json();
+        const paymentsData = await paymentsRes.json();
+        const reservationsData = await reservationsRes.json();
+        const tenantsData = await tenantsRes.json();
+        const performanceData = await performanceRes.json();
+        
+        initCharts(revenueData, occupancyData, paymentsData, reservationsData, tenantsData);
+        initPerformanceTable(performanceData.data);
+    } catch (error) {
+        console.error('Error loading analytics:', error);
+    }
+}
+
+function initCharts(revenue, occupancy, payments, reservations, tenants) {
+    // Monthly Revenue Chart
+    new Chart(document.getElementById('monthlyRevenueChart'), {
+        type: 'line',
+        data: {
+            labels: revenue.labels,
+            datasets: [{
+                label: 'Revenue (₱)',
+                data: revenue.data,
+                borderColor: '#6366f1',
+                backgroundColor: 'rgba(99, 102, 241, 0.1)',
+                fill: true,
+                tension: 0.3,
+                pointBackgroundColor: '#6366f1'
+            }]
+        },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+    });
+
+    // Revenue by Type
+    new Chart(document.getElementById('revenueTypeChart'), {
+        type: 'doughnut',
+        data: { labels: payments.by_type.labels, datasets: [{ data: payments.by_type.data, backgroundColor: ['#8b5cf6', '#0ea5e9', '#6366f1', '#f59e0b', '#10b981', '#94a3b8'], borderWidth: 2, borderColor: '#fff' }] },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } }, cutout: '60%' }
+    });
+
+    // Occupancy by Room Type
+    new Chart(document.getElementById('occupancyByTypeChart'), {
+        type: 'bar',
+        data: {
+            labels: occupancy.room_type.labels,
+            datasets: [
+                { label: 'Occupied', data: occupancy.room_type.occupied, backgroundColor: 'rgba(99, 102, 241, 0.8)', borderColor: '#6366f1', borderWidth: 1, borderRadius: 4 },
+                { label: 'Total', data: occupancy.room_type.total, backgroundColor: 'rgba(148, 163, 184, 0.3)', borderColor: '#94a3b8', borderWidth: 1, borderRadius: 4 }
+            ]
+        },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' } }, scales: { y: { beginAtZero: true } } }
+    });
+
+    // Payment Methods
+    new Chart(document.getElementById('paymentMethodChart'), {
+        type: 'pie',
+        data: { labels: payments.by_method.labels, datasets: [{ data: payments.by_method.data, backgroundColor: ['#10b981', '#6366f1'], borderWidth: 2, borderColor: '#fff' }] },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
+    });
+
+    // Gender
+    new Chart(document.getElementById('genderChart'), {
+        type: 'doughnut',
+        data: { labels: tenants.by_gender.labels, datasets: [{ data: tenants.by_gender.data, backgroundColor: ['#0ea5e9', '#ec4899', '#94a3b8'], borderWidth: 2, borderColor: '#fff' }] },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } }, cutout: '60%' }
+    });
+
+    // Year Level
+    new Chart(document.getElementById('yearLevelChart'), {
+        type: 'bar',
+        data: { labels: tenants.by_year.labels, datasets: [{ label: 'Students', data: tenants.by_year.data, backgroundColor: 'rgba(16, 185, 129, 0.8)', borderColor: '#10b981', borderWidth: 1, borderRadius: 4 }] },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } }, indexAxis: 'y' }
+    });
+
+    // Reservation Trend
+    new Chart(document.getElementById('reservationTrendChart'), {
+        type: 'line',
+        data: { labels: reservations.labels, datasets: [{ label: 'Reservations', data: reservations.data, borderColor: '#f59e0b', backgroundColor: 'rgba(245, 158, 11, 0.1)', fill: true, tension: 0.3, pointBackgroundColor: '#f59e0b' }] },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+    });
+}
+
+function initPerformanceTable(data) {
+    const tbody = document.getElementById('performanceTableBody');
+    if (!tbody) return;
+    
+    tbody.innerHTML = data.map(row => `
+        <tr>
+            <td><strong>${row.room_type}</strong></td>
+            <td>${row.total_rooms}</td>
+            <td>${row.occupied_rooms}</td>
+            <td><span class="badge bg-${row.occupancy_rate >= 80 ? 'success' : row.occupancy_rate >= 50 ? 'warning' : 'danger'}">${row.occupancy_rate}%</span></td>
+            <td>${row.capacity}</td>
+            <td>${row.occupied_beds}</td>
+            <td>${dashboardUtils.formatCurrency(row.revenue)}</td>
+        </tr>
+    `).join('');
+}
+</script>
+{% endblock %}

@@ -1,0 +1,132 @@
+{% extends 'shared/base.html' %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2"><i class="fas fa-calendar-check me-2 text-primary"></i>My Reservations</h1>
+</div>
+
+<!-- Active Reservation Card -->
+{% if active_reservation %}
+<div class="card mb-4 border-primary">
+    <div class="card-header bg-primary text-white">
+        <h5 class="mb-0"><i class="fas fa-door-open me-2"></i>Active Reservation</h5>
+    </div>
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-4 text-center">
+                {% if active_reservation.primary_image %}
+                <img src="{{ url_for('static', filename='uploads/' ~ active_reservation.primary_image) }}" alt="{{ active_reservation.room_name }}" class="img-fluid rounded mb-3" style="max-height: 200px;">
+                {% else %}
+                <div class="bg-light rounded d-flex align-items-center justify-content-center mb-3" style="height: 200px;">
+                    <i class="fas fa-door-open fa-4x text-muted"></i>
+                </div>
+                {% endif %}
+            </div>
+            <div class="col-md-8">
+                <h3>{{ active_reservation.room_name }}</h3>
+                <p class="text-muted mb-3">Room {{ active_reservation.room_number }}</p>
+                
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <strong>Monthly Rent:</strong> {{ active_reservation.monthly_rent | currency }}<br>
+                        <strong>Move-in Date:</strong> {{ active_reservation.move_in_date | date_format }}<br>
+                        <strong>Expected Duration:</strong> {{ active_reservation.expected_duration or 'N/A' }} months
+                    </div>
+                    <div class="col-md-6">
+                        <strong>Reservation Code:</strong> {{ active_reservation.reservation_code }}<br>
+                        <strong>Status:</strong> {{ active_reservation.status | status_badge | safe }}<br>
+                        <strong>Reserved:</strong> {{ active_reservation.created_at | date_format }}
+                    </div>
+                </div>
+                
+                <div class="d-flex gap-2">
+                    <a href="{{ url_for('student.payments') }}" class="btn btn-primary"><i class="fas fa-money-bill-wave me-1"></i>View Payments</a>
+                    <a href="{{ url_for('student.receipts') }}" class="btn btn-outline-secondary"><i class="fas fa-receipt me-1"></i>View Receipts</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="card mb-4 border-warning">
+    <div class="card-body text-center py-5">
+        <i class="fas fa-calendar-times fa-4x text-warning mb-3"></i>
+        <h4>No Active Reservation</h4>
+        <p class="text-muted">You don't have an active reservation at the moment.</p>
+        <a href="{{ url_for('student.reservations') }}" class="btn btn-warning"><i class="fas fa-plus me-1"></i>Browse Available Rooms</a>
+    </div>
+</div>
+{% endif %}
+
+<!-- All Reservations History -->
+<div class="card">
+    <div class="card-header">
+        <h5 class="mb-0"><i class="fas fa-history me-2"></i>Reservation History</h5>
+    </div>
+    <div class="card-body p-0">
+        {% if reservations %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Reservation Code</th>
+                        <th>Room</th>
+                        <th>Type</th>
+                        <th>Move-in Date</th>
+                        <th>Duration</th>
+                        <th>Monthly Rent</th>
+                        <th>Status</th>
+                        <th>Date Reserved</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in reservations %}
+                    <tr>
+                        <td><code>{{ r.reservation_code }}</code></td>
+                        <td>{{ r.room_number }} - {{ r.room_name }}</td>
+                        <td><span class="badge bg-info">{{ r.room_type | title }}</span></td>
+                        <td>{{ r.move_in_date | date_format }}</td>
+                        <td>{{ r.expected_duration or 'N/A' }} months</td>
+                        <td>{{ r.monthly_rent | currency }}</td>
+                        <td>{{ r.status | status_badge | safe }}</td>
+                        <td>{{ r.created_at | date_format }}</td>
+                        <td>
+                            <div class="btn-group btn-group-sm">
+                                {% if r.status == 'pending' %}
+                                <a href="#" class="btn btn-outline-danger" onclick="cancelReservation('{{ r.id }}')"><i class="fas fa-times"></i></a>
+                                {% endif %}
+                                <a href="#" class="btn btn-outline-primary" onclick="viewReservationDetails('{{ r.id }}')"><i class="fas fa-eye"></i></a>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5">
+            <i class="fas fa-calendar fa-3x text-muted mb-3"></i>
+            <h5 class="text-muted">No reservations yet</h5>
+            <p class="text-muted">Your reservation history will appear here.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function cancelReservation(reservationId) {
+    if (confirm('Are you sure you want to cancel this reservation?')) {
+        // TODO: Implement cancel reservation API call
+        alert('Cancel reservation functionality to be implemented');
+    }
+}
+
+function viewReservationDetails(reservationId) {
+    // TODO: Implement view details modal
+    alert('View details functionality to be implemented');
+}
+</script>
+{% endblock %}

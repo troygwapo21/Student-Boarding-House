@@ -1,0 +1,61 @@
+{% extends 'shared/base.html' %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2"><i class="fas fa-receipt me-2 text-primary"></i>My Receipts</h1>
+</div>
+
+<div class="card">
+    <div class="card-body p-0">
+        {% if receipts %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Receipt #</th>
+                        <th>Payment Code</th>
+                        <th>Type</th>
+                        <th>Room</th>
+                        <th>Amount</th>
+                        <th>Late Fee</th>
+                        <th>Paid</th>
+                        <th>Method</th>
+                        <th>Period</th>
+                        <th>Date Issued</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in receipts %}
+                    <tr>
+                        <td><code>{{ r.receipt_number }}</code></td>
+                        <td><code>{{ r.payment_code }}</code></td>
+                        <td>{{ r.payment_type | replace('_', ' ') | title }}</td>
+                        <td>{{ r.room_number or '-' }} {{ r.room_name ? '- ' ~ r.room_name : '' }}</td>
+                        <td>{{ r.amount | currency }}</td>
+                        <td>{% if r.late_fee and r.late_fee > 0 %}<span class="text-danger">{{ r.late_fee | currency }}</span>{% else %}-{% endif %}</td>
+                        <td>{{ r.amount_paid | currency }}</td>
+                        <td><span class="badge bg-light text-dark">{{ (r.payment_method or 'cash') | title }}</span></td>
+                        <td>{{ r.billing_period or '-' }}</td>
+                        <td>{{ r.issued_date | date_format }}</td>
+                        <td>
+                            <div class="btn-group btn-group-sm">
+                                <a href="{{ url_for('student.receipts') }}?view={{ r.id }}" class="btn btn-outline-primary"><i class="fas fa-eye"></i></a>
+                                <a href="{{ url_for('student.receipts') }}?download={{ r.id }}" class="btn btn-outline-secondary"><i class="fas fa-download"></i></a>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5">
+            <i class="fas fa-receipt fa-3x text-muted mb-3"></i>
+            <h5 class="text-muted">No receipts yet</h5>
+            <p class="text-muted">Your payment receipts will appear here once you make payments.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

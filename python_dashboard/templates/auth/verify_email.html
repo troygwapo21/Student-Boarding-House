@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verify Email - Student Boarding House Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.1/css/all.min.css" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/auth.css') }}" rel="stylesheet">
+</head>
+<body>
+    <div class="auth-wrapper">
+        <div class="auth-card">
+            <div class="auth-header text-center mb-4">
+                <div class="auth-logo mb-3">
+                    <i class="fas fa-envelope-open-text fa-3x text-primary"></i>
+                </div>
+                <h2 class="fw-bold">Verify Your Email</h2>
+                <p class="text-muted">We've sent a 6-digit code to <strong>{{ email }}</strong></p>
+            </div>
+            
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                <div class="mb-3">
+                    {% for category, message in messages %}
+                    <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            {% endwith %}
+            
+            <form method="POST" action="{{ url_for('auth.verify_email') }}" id="verifyForm">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                
+                <div class="mb-4">
+                    <label class="form-label">Verification Code</label>
+                    <div class="otp-inputs">
+                        <input type="text" class="form-control text-center otp-digit" maxlength="1" pattern="[0-9]*" inputmode="numeric" name="code_1" required autocomplete="one-time-code">
+                        <input type="text" class="form-control text-center otp-digit" maxlength="1" pattern="[0-9]*" inputmode="numeric" name="code_2" required autocomplete="one-time-code">
+                        <input type="text" class="form-control text-center otp-digit" maxlength="1" pattern="[0-9]*" inputmode="numeric" name="code_3" required autocomplete="one-time-code">
+                        <input type="text" class="form-control text-center otp-digit" maxlength="1" pattern="[0-9]*" inputmode="numeric" name="code_4" required autocomplete="one-time-code">
+                        <input type="text" class="form-control text-center otp-digit" maxlength="1" pattern="[0-9]*" inputmode="numeric" name="code_5" required autocomplete="one-time-code">
+                        <input type="text" class="form-control text-center otp-digit" maxlength="1" pattern="[0-9]*" inputmode="numeric" name="code_6" required autocomplete="one-time-code">
+                    </div>
+                    <input type="hidden" name="code" id="fullCode">
+                </div>
+                
+                <button type="submit" class="btn btn-primary w-100 py-2 fw-medium">
+                    <i class="fas fa-check me-2"></i>Verify
+                </button>
+            </form>
+            
+            <div class="text-center mt-3">
+                <button type="button" class="btn btn-link" id="resendBtn" data-cooldown="{{ resendCooldown }}">
+                    <i class="fas fa-redo me-1"></i>Resend Code (<span id="cooldownTimer">{{ resendCooldown }}</span>s)
+                </button>
+            </div>
+            
+            <div class="text-center mt-3">
+                <a href="{{ url_for('auth.login') }}" class="text-decoration-none small">Back to login</a>
+            </div>
+        </div>
+        
+        <div class="auth-footer text-center mt-4 text-muted small">
+            <p class="mb-0">Code expires in <span id="expiryTimer">{{ remainingSeconds }}</span> seconds</p>
+        </div>
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="{{ url_for('static', filename='js/auth.js') }}"></script>
+</body>
+</html>

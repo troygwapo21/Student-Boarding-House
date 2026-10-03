@@ -1,0 +1,3 @@
+UPDATE `system_settings` SET `setting_value` = 'To provide students with a secure, convenient, and reliable platform for finding and reserving quality boarding houses. The website aims to simplify room management, reservations, payments, communication, and tenant services through an organized digital system.' WHERE `setting_key` = 'about_mission';
+
+UPDATE `system_settings` SET `setting_value` = 'To become a trusted digital boarding house platform that improves the student housing experience through accessible technology, efficient management, transparent services, and better communication between students, tenants, and boarding house administrators.' WHERE `setting_key` = 'about_vision';
