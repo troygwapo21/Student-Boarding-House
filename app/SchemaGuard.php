@@ -36,7 +36,9 @@ class SchemaGuard {
         self::guardStudents($db);
         self::guardReservations($db);
         self::guardPayments($db);
+        self::guardRooms($db);
         self::guardTables($db);
+        self::guardRefundRequests($db);
     }
 
     // ------------------------------------------------------------------
@@ -143,15 +145,19 @@ class SchemaGuard {
     // ------------------------------------------------------------------
     private static function guardPayments(Database $db): void {
         self::ensureColumns($db, 'payments', [
-            'late_fee'         => 'DECIMAL(10,2) NOT NULL DEFAULT 0.00',
-            'amount_paid'      => 'DECIMAL(10,2) NOT NULL DEFAULT 0.00',
-            'billing_period'   => 'VARCHAR(7) DEFAULT NULL',
-            'penalty_applied'  => 'TINYINT(1) NOT NULL DEFAULT 0',
+            'late_fee'          => 'DECIMAL(10,2) NOT NULL DEFAULT 0.00',
+            'amount_paid'       => 'DECIMAL(10,2) NOT NULL DEFAULT 0.00',
+            'billing_period'    => 'VARCHAR(7) DEFAULT NULL',
+            'penalty_applied'   => 'TINYINT(1) NOT NULL DEFAULT 0',
+            'refunded_amount'   => 'DECIMAL(10,2) NOT NULL DEFAULT 0.00',
+            'refund_request_id' => 'INT UNSIGNED DEFAULT NULL',
         ], [
-            'late_fee'        => 'amount',
-            'amount_paid'     => 'late_fee',
-            'billing_period'  => 'amount_paid',
-            'penalty_applied' => 'billing_period',
+            'late_fee'          => 'amount',
+            'amount_paid'       => 'late_fee',
+            'billing_period'    => 'amount_paid',
+            'penalty_applied'   => 'billing_period',
+            'refunded_amount'   => 'amount_paid',
+            'refund_request_id' => 'refunded_amount',
         ]);
 
         $types = self::columnTypes($db, 'payments');
@@ -176,6 +182,24 @@ class SchemaGuard {
                 error_log('SchemaGuard: payments.status enum - ' . $e->getMessage());
             }
         }
+    }
+
+    private static function guardRooms(Database $db): void {
+        self::ensureColumns($db, 'rooms', [
+            'is_featured' => 'TINYINT(1) NOT NULL DEFAULT 0',
+        ], [
+            'is_featured' => 'room_type',
+        ]);
+    }
+
+    private static function guardRefundRequests(Database $db): void {
+        self::ensureColumns($db, 'refund_requests', [
+            'refund_type'  => "ENUM('monthly','advance') NOT NULL DEFAULT 'monthly'",
+            'gcash_number' => "VARCHAR(20) DEFAULT NULL",
+        ], [
+            'refund_type'  => 'amount',
+            'gcash_number' => 'reason',
+        ]);
     }
 
     // ------------------------------------------------------------------
