@@ -17,7 +17,10 @@ if (function_exists('proc_open')) {
             'students' => $analyticsStudentRows ?? [],
         ];
 
-        $analyticsScript = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'app' . DIRECTORY_SEPARATOR . 'analytics' . DIRECTORY_SEPARATOR . 'dashboard_analytics.py';
+        $analyticsScript = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'python_dashboard' . DIRECTORY_SEPARATOR . 'analytics' . DIRECTORY_SEPARATOR . 'dashboard_analytics.py';
+        if (!file_exists($analyticsScript)) {
+            $analyticsScript = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'app' . DIRECTORY_SEPARATOR . 'analytics' . DIRECTORY_SEPARATOR . 'dashboard_analytics.py';
+        }
         if (!file_exists($analyticsScript)) {
             $analyticsScript = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'analytics' . DIRECTORY_SEPARATOR . 'dashboard_analytics.py';
         }
@@ -390,7 +393,7 @@ $needsAttention = (int)$openMaintenance + (int)$openComplaints + (int)$unreadFee
 
 <div class="s-go">
     <div class="d-inline-flex align-items-center gap-2 mb-3 px-3 py-1 rounded-pill" style="background:rgba(56,189,248,0.12);border:1px solid rgba(56,189,248,0.3);color:#0284c7;font-size:12px;font-weight:600;">
-        <i class="fab fa-python" style="color:#0284c7;"></i> Python Analytics Integration Active &middot; Powered by <code>app/analytics/dashboard_analytics.py</code>
+        <i class="fab fa-python" style="color:#0284c7;"></i> Python Analytics Integration Active &middot; Powered by <code>python_dashboard/analytics/dashboard_analytics.py</code>
     </div>
     <!-- Header -->
     <div class="s-head">
