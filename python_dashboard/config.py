@@ -7,11 +7,11 @@ load_dotenv()
 class Config:
     SECRET_KEY = os.environ.get('FLASK_SECRET_KEY', 'iv@suPrD7e%sF.g,')
     
-    DB_HOST = os.environ.get('DB_HOST', 'sql311.infinityfree.com')
+    DB_HOST = os.environ.get('DB_HOST', 'localhost')
     DB_PORT = int(os.environ.get('DB_PORT', 3306))
-    DB_NAME = os.environ.get('DB_NAME', 'if0_42763980_student_boarding_house')
-    DB_USER = os.environ.get('DB_USER', 'if0_42763980')
-    DB_PASSWORD = os.environ.get('DB_PASSWORD', '8DOhvchcMSrhIk')
+    DB_NAME = os.environ.get('DB_NAME', 'despierisXcN_HAHA')
+    DB_USER = os.environ.get('DB_USER', 'despierisXcN_HAHA')
+    DB_PASSWORD = os.environ.get('DB_PASSWORD', '8 Ball Pool')
     
     MYSQL_DSN = f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}?charset=utf8mb4"
     
