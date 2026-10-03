@@ -1,9 +1,9 @@
 <?php
 
 $serverHost = $_SERVER['HTTP_HOST'] ?? ($_SERVER['SERVER_NAME'] ?? '');
-$isLiveHost = (strpos($serverHost, 'gleeze.com') !== false || strpos($serverHost, 'agilahost') !== false);
+$isLocal = ($serverHost === 'localhost' || $serverHost === '127.0.0.1' || strpos($serverHost, 'localhost:') === 0);
 
-if ($isLiveHost) {
+if (!$isLocal) {
     define('DB_HOST', 'localhost');
     define('DB_NAME', 'despierisXcN_HAHA');
     define('DB_USER', 'despierisXcN_HAHA');
