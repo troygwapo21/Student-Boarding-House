@@ -1,10 +1,9 @@
 <?php
-$output = [];
-$return_var = -1;
-exec('python3 --version 2>&1', $output, $return_var);
-echo "python3: " . implode("\n", $output) . " (code: $return_var)\n";
+ini_set('display_errors', 1);
+error_reporting(E_ALL);
 
-$output2 = [];
-$return_var2 = -1;
-exec('python --version 2>&1', $output2, $return_var2);
-echo "python: " . implode("\n", $output2) . " (code: $return_var2)\n";
+$disabled = explode(',', ini_get('disable_functions'));
+$disabled = array_map('trim', $disabled);
+echo "exec disabled: " . (in_array('exec', $disabled) ? 'YES' : 'NO') . "\n";
+echo "shell_exec disabled: " . (in_array('shell_exec', $disabled) ? 'YES' : 'NO') . "\n";
+echo "Disabled functions list:\n" . implode(", ", $disabled) . "\n";
