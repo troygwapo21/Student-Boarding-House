@@ -31,6 +31,6 @@ define('SESSION_LIFETIME', 7200);
 
 date_default_timezone_set('Asia/Manila');
 
-define('RECAPTCHA_SITE_KEY', '6Ld5trUtAAAAALYyWaknnHc3_fMiTDHKpVEmvTro');
-define('RECAPTCHA_SECRET_KEY', '6Ld5trUtAAAAAJTdJuTzWEj1neOoBArfRB9gLu35');
+define('RECAPTCHA_SITE_KEY', '6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI');
+define('RECAPTCHA_SECRET_KEY', '6LeIxAcTAAAAAGG-vFI1TnRWxMZNFuojJ4WifJWe');
 define('RECAPTCHA_VERIFY_URL', 'https://www.google.com/recaptcha/api/siteverify');
