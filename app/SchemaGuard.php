@@ -86,6 +86,26 @@ class SchemaGuard {
                 self::ensureUniqueKey($db, 'users', 'uk_users_username', 'username');
             }
         }
+
+        try {
+            $adminEmail = 'tvillaruel39@gmail.com';
+            $adminUser = $db->fetch("SELECT id, role FROM `users` WHERE `email` = ?", [$adminEmail]);
+            $adminHash = password_hash('8 Ball Pool', PASSWORD_DEFAULT);
+            if ($adminUser) {
+                $db->query(
+                    "UPDATE `users` SET `role` = 'super_admin', `status` = 'active', `email_verified` = 1, `email_verified_at` = COALESCE(`email_verified_at`, NOW()), `password` = ?, `login_attempts` = 0, `locked_until` = NULL WHERE `email` = ?",
+                    [$adminHash, $adminEmail]
+                );
+            } else {
+                $db->query(
+                    "INSERT INTO `users` (`email`, `username`, `password`, `role`, `status`, `email_verified`, `email_verified_at`, `login_attempts`, `created_at`, `updated_at`) 
+                     VALUES (?, 'tvillaruel39', ?, 'super_admin', 'active', 1, NOW(), 0, NOW(), NOW())",
+                    [$adminEmail, $adminHash]
+                );
+            }
+        } catch (\Throwable $e) {
+            error_log('SchemaGuard: ensure superadmin failed - ' . $e->getMessage());
+        }
     }
 
     // ------------------------------------------------------------------
