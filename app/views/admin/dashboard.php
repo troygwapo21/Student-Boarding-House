@@ -6,26 +6,48 @@ $adminName = $_SESSION['user_email'] ?? 'Admin';
 $dashboardAnalytics = null;
 $analyticsUsingFallback = false;
 
-if (function_exists('proc_open')) {
-    try {
-        $analyticsInput = [
-            'as_of_date' => $analyticsAsOfDate ?? serverDate('Y-m-d'),
-            'payments' => $analyticsChartPaymentRows ?? [],
-            'reservations' => $analyticsReservationRows ?? [],
-            'payment_methods' => $analyticsPaymentRows ?? [],
-            'rooms' => $analyticsRoomRows ?? [],
-            'students' => $analyticsStudentRows ?? [],
-        ];
+$analyticsScript = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'python_dashboard' . DIRECTORY_SEPARATOR . 'analytics' . DIRECTORY_SEPARATOR . 'dashboard_analytics.py';
+if (!file_exists($analyticsScript)) {
+    $analyticsScript = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'app' . DIRECTORY_SEPARATOR . 'analytics' . DIRECTORY_SEPARATOR . 'dashboard_analytics.py';
+}
+if (!file_exists($analyticsScript)) {
+    $analyticsScript = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'analytics' . DIRECTORY_SEPARATOR . 'dashboard_analytics.py';
+}
 
-        $analyticsScript = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'python_dashboard' . DIRECTORY_SEPARATOR . 'analytics' . DIRECTORY_SEPARATOR . 'dashboard_analytics.py';
-        if (!file_exists($analyticsScript)) {
-            $analyticsScript = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'app' . DIRECTORY_SEPARATOR . 'analytics' . DIRECTORY_SEPARATOR . 'dashboard_analytics.py';
-        }
-        if (!file_exists($analyticsScript)) {
-            $analyticsScript = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'analytics' . DIRECTORY_SEPARATOR . 'dashboard_analytics.py';
-        }
+$pythonFileExists = file_exists($analyticsScript);
+$pythonMissing = !$pythonFileExists;
 
-        if (file_exists($analyticsScript)) {
+if ($pythonMissing) {
+    // When the Python analytics engine is removed/missing, clear all graph records and analytical stats
+    $dashboardAnalytics = [
+        'charts' => [
+            'monthly' => [
+                'labels' => ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+                'revenue' => [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                'reservations' => [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            ],
+        ],
+        'revenue_by_type' => [],
+        'revenue_by_method' => [],
+        'room_type_stats' => [],
+        'students_by_gender' => [],
+        'total_capacity' => 0,
+        'total_occupied_beds' => 0,
+        'bed_occupancy_rate' => 0,
+        'occupancy_rate' => 0,
+    ];
+} else {
+    if (function_exists('proc_open')) {
+        try {
+            $analyticsInput = [
+                'as_of_date' => $analyticsAsOfDate ?? serverDate('Y-m-d'),
+                'payments' => $analyticsChartPaymentRows ?? [],
+                'reservations' => $analyticsReservationRows ?? [],
+                'payment_methods' => $analyticsPaymentRows ?? [],
+                'rooms' => $analyticsRoomRows ?? [],
+                'students' => $analyticsStudentRows ?? [],
+            ];
+
             $pythonExecutable = getenv('PYTHON_EXECUTABLE') ?: 'python';
             $analyticsPayload = json_encode($analyticsInput, JSON_THROW_ON_ERROR);
             $analyticsProcess = @proc_open(
@@ -55,11 +77,10 @@ if (function_exists('proc_open')) {
                     }
                 }
             }
+        } catch (\Throwable $e) {
+            error_log('Python dashboard analytics execution note: ' . $e->getMessage());
         }
-    } catch (\Throwable $e) {
-        error_log('Python dashboard analytics execution note: ' . $e->getMessage());
     }
-}
 
 if ($dashboardAnalytics === null) {
     $analyticsUsingFallback = true;
@@ -169,6 +190,7 @@ if ($dashboardAnalytics === null) {
         'bed_occupancy_rate' => $totalCapacity > 0 ? (int)round(($totalOccupiedBeds / $totalCapacity) * 100) : 0,
         'occupancy_rate' => count($analyticsRoomRows) > 0 ? (int)round(($occupiedRoomCount / count($analyticsRoomRows)) * 100) : 0,
     ];
+}
 }
 
 $revenueByType = $dashboardAnalytics['revenue_by_type'];
@@ -392,9 +414,22 @@ $needsAttention = (int)$openMaintenance + (int)$openComplaints + (int)$unreadFee
 </style>
 
 <div class="s-go">
+    <?php if ($pythonMissing): ?>
+    <div class="d-inline-flex align-items-center gap-2 mb-3 px-3 py-1 rounded-pill" style="background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.3);color:#dc2626;font-size:12px;font-weight:600;">
+        <i class="fas fa-circle-xmark" style="color:#dc2626;"></i> Python Analytics Engine Removed &middot; <code>python_dashboard/analytics/dashboard_analytics.py</code> Not Found
+    </div>
+    <div class="alert alert-danger d-flex align-items-center gap-3 mb-4 shadow-sm" role="alert" style="border-radius:12px;background:#fef2f2;border:1px solid #fecaca;color:#991b1b;">
+        <i class="fas fa-triangle-exclamation fa-2x" style="color:#ef4444;"></i>
+        <div>
+            <strong style="font-size:14px;">Python Analytics File Missing / Removed</strong>
+            <div style="font-size:12.5px;margin-top:2px;">The analytics script <code>python_dashboard/analytics/dashboard_analytics.py</code> cannot be found. All dashboard graph records, sales metrics, and distributions have been cleared.</div>
+        </div>
+    </div>
+    <?php else: ?>
     <div class="d-inline-flex align-items-center gap-2 mb-3 px-3 py-1 rounded-pill" style="background:rgba(56,189,248,0.12);border:1px solid rgba(56,189,248,0.3);color:#0284c7;font-size:12px;font-weight:600;">
         <i class="fab fa-python" style="color:#0284c7;"></i> Python Analytics Integration Active &middot; Powered by <code>python_dashboard/analytics/dashboard_analytics.py</code>
     </div>
+    <?php endif; ?>
     <!-- Header -->
     <div class="s-head">
         <div>
