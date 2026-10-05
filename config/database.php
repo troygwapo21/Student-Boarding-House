@@ -1,14 +1,37 @@
 <?php
 
 
-define('DB_HOST', 'sql311.infinityfree.com');
-define('DB_NAME', 'if0_42763980_student_boarding_house');
-define('DB_USER', 'if0_42763980');
-define('DB_PASS', '8DOhvchcMSrhIk');
-define('DB_CHARSET', 'utf8mb4');
-define('DB_PORT', 3306);
+$serverHost = $_SERVER['HTTP_HOST'] ?? ($_SERVER['SERVER_NAME'] ?? '');
 
-define('SITE_URL', 'https://alondescdadorm.great-site.net');
+if (strpos($serverHost, 'great-site.net') !== false || strpos($serverHost, 'infinityfree') !== false) {
+    // InfinityFree Environment
+    define('DB_HOST', 'sql311.infinityfree.com');
+    define('DB_NAME', 'if0_42763980_student_boarding_house');
+    define('DB_USER', 'if0_42763980');
+    define('DB_PASS', '8DOhvchcMSrhIk');
+    define('SITE_URL', 'https://alondescdadorm.great-site.net');
+} elseif (strpos($serverHost, 'gleeze.com') !== false || strpos($serverHost, 'agilahost') !== false) {
+    // AgilaHost Live Environment
+    define('DB_HOST', 'localhost');
+    define('DB_NAME', 'despierisXcN_HAHA');
+    define('DB_USER', 'despierisXcN_HAHA');
+    define('DB_PASS', '8 Ball Pool');
+    define('SITE_URL', 'https://fab-cafe.gleeze.com');
+} elseif ($serverHost === 'localhost' || $serverHost === '127.0.0.1' || strpos($serverHost, 'localhost:') === 0) {
+    // Localhost XAMPP Environment
+    define('DB_HOST', 'localhost');
+    define('DB_NAME', 'student_boarding_house');
+    define('DB_USER', 'root');
+    define('DB_PASS', '');
+    define('SITE_URL', 'http://localhost/READY TO DEPENDS FINAL WEBSITE_Phyton');
+} else {
+    // Default Fallback (AgilaHost)
+    define('DB_HOST', 'localhost');
+    define('DB_NAME', 'despierisXcN_HAHA');
+    define('DB_USER', 'despierisXcN_HAHA');
+    define('DB_PASS', '8 Ball Pool');
+    define('SITE_URL', 'https://fab-cafe.gleeze.com');
+}
 define('SITE_NAME', 'Alondes Cda Dorm');
 define('SITE_EMAIL', 'alondescdadorm@gmail.com');
 
