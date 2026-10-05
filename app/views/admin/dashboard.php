@@ -4,6 +4,12 @@ $greeting = $hour < 12 ? 'Good morning' : ($hour < 18 ? 'Good afternoon' : 'Good
 $adminName = $_SESSION['user_email'] ?? 'Admin';
 
 $analyticsScript = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'analytics' . DIRECTORY_SEPARATOR . 'dashboard_analytics.py';
+if (!file_exists($analyticsScript)) {
+    $analyticsScript = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'app' . DIRECTORY_SEPARATOR . 'analytics' . DIRECTORY_SEPARATOR . 'dashboard_analytics.py';
+}
+$pythonFileExists = file_exists($analyticsScript);
+$pythonMissing = !$pythonFileExists;
+
 $analyticsInput = [
     'as_of_date' => $analyticsAsOfDate,
     'payments' => $analyticsChartPaymentRows,
@@ -26,6 +32,9 @@ $analyticsApiUrl = trim((string)($analyticsLocalConfig['api_url'] ?? (getenv('DA
 $analyticsApiToken = (string)($analyticsLocalConfig['api_token'] ?? (getenv('DASHBOARD_ANALYTICS_API_TOKEN') ?: ''));
 
 try {
+    if ($pythonMissing) {
+        throw new RuntimeException('Python analytics script dashboard_analytics.py was not found. Python integration is required.');
+    }
     if ($analyticsError !== null) {
         throw new RuntimeException($analyticsError);
     }
@@ -195,9 +204,7 @@ try {
             $analyticsOutput = json_encode($dashboardAnalytics, JSON_THROW_ON_ERROR);
         }
     } else {
-        require_once dirname(__DIR__, 2) . '/Services/DashboardAnalyticsService.php';
-        $dashboardAnalytics = DashboardAnalyticsService::calculate($analyticsInput);
-        $analyticsOutput = json_encode($dashboardAnalytics, JSON_THROW_ON_ERROR);
+        throw new RuntimeException('Python analytics script dashboard_analytics.py was not found. Python integration is required.');
     }
 
     if (!is_string($analyticsOutput)) {
@@ -520,9 +527,20 @@ $needsAttention = (int)$openMaintenance + (int)$openComplaints + (int)$unreadFee
 </style>
 
 <div class="s-go">
-    <?php if (!$analyticsAvailable): ?>
-    <div class="alert alert-warning py-2 mb-3" role="status">
-        Python analytics are currently unavailable. <?= e($analyticsError ?: 'Configure a Python analytics API endpoint for this host.') ?> Analytics values are not being calculated in PHP.
+    <?php if ($pythonMissing): ?>
+    <div class="d-inline-flex align-items-center gap-2 mb-3 px-3 py-1 rounded-pill" style="background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.3);color:#dc2626;font-size:12px;font-weight:600;">
+        <i class="fas fa-circle-xmark" style="color:#dc2626;"></i> Python Analytics Engine Removed &middot; <code>dashboard_analytics.py</code> Not Found
+    </div>
+    <div class="alert alert-danger d-flex align-items-center gap-3 mb-4 shadow-sm" role="alert" style="border-radius:12px;background:#fef2f2;border:1px solid #fecaca;color:#991b1b;">
+        <i class="fas fa-triangle-exclamation fa-2x" style="color:#ef4444;"></i>
+        <div>
+            <strong style="font-size:14px;">Python Analytics File Missing / Removed</strong>
+            <div style="font-size:12.5px;margin-top:2px;">The analytics script <code>app/analytics/dashboard_analytics.py</code> cannot be found. All dashboard graph records, sales metrics, and distributions have been cleared because Python is required.</div>
+        </div>
+    </div>
+    <?php else: ?>
+    <div class="d-inline-flex align-items-center gap-2 mb-3 px-3 py-1 rounded-pill" style="background:rgba(56,189,248,0.12);border:1px solid rgba(56,189,248,0.3);color:#0284c7;font-size:12px;font-weight:600;">
+        <i class="fab fa-python" style="color:#0284c7;"></i> Python Analytics Integration Active &middot; Powered by <code>app/analytics/dashboard_analytics.py</code>
     </div>
     <?php endif; ?>
     <!-- Header -->
