@@ -20,6 +20,7 @@ require_once BASE_PATH . '/app/SchemaGuard.php';
 
 // Load Services
 require_once BASE_PATH . '/app/Services/RecaptchaService.php';
+require_once BASE_PATH . '/app/Services/DashboardAnalyticsService.php';
 
 // Load Controllers
 require_once BASE_PATH . '/app/Controllers/HomeController.php';

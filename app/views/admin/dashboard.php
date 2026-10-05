@@ -103,76 +103,101 @@ try {
         if ($analyticsHttpStatus < 200 || $analyticsHttpStatus >= 300) {
             throw new RuntimeException('Python analytics API returned HTTP ' . $analyticsHttpStatus . '.');
         }
-    } elseif (is_file($analyticsScript) && function_exists('proc_open')) {
-        $analyticsPayload = json_encode($analyticsInput, JSON_THROW_ON_ERROR);
-        $pythonExecutable = getenv('PYTHON_EXECUTABLE') ?: 'python';
-        $analyticsProcess = proc_open(
-            [$pythonExecutable, $analyticsScript],
-            [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-            $analyticsPipes,
-            dirname($analyticsScript)
-        );
-        if (!is_resource($analyticsProcess)) {
-            throw new RuntimeException('Could not start Python. Configure DASHBOARD_ANALYTICS_API_URL on hosts without process execution.');
-        }
-        $analyticsPayloadLength = strlen($analyticsPayload);
-        $analyticsWritten = 0;
-        while ($analyticsWritten < $analyticsPayloadLength) {
-            $analyticsBytes = fwrite($analyticsPipes[0], substr($analyticsPayload, $analyticsWritten));
-            if ($analyticsBytes === false || $analyticsBytes === 0) {
-                fclose($analyticsPipes[0]);
-                fclose($analyticsPipes[1]);
-                fclose($analyticsPipes[2]);
-                proc_close($analyticsProcess);
-                throw new RuntimeException('Could not send dashboard data to Python.');
-            }
-            $analyticsWritten += $analyticsBytes;
-        }
-        fclose($analyticsPipes[0]);
-        $analyticsOutput = stream_get_contents($analyticsPipes[1]);
-        $analyticsErrorOutput = stream_get_contents($analyticsPipes[2]);
-        fclose($analyticsPipes[1]);
-        fclose($analyticsPipes[2]);
-        $analyticsExitCode = proc_close($analyticsProcess);
-        if ($analyticsExitCode !== 0) {
-            throw new RuntimeException('Python analytics failed: ' . trim((string)$analyticsErrorOutput));
-        }
-    } elseif (is_file($analyticsScript) && function_exists('exec')) {
-        $analyticsPayload = json_encode($analyticsInput, JSON_THROW_ON_ERROR);
-        $pythonExecutable = getenv('PYTHON_EXECUTABLE') ?: 'python';
-        $analyticsTempFiles = [];
-        try {
-            foreach (['input', 'output', 'error'] as $fileType) {
-                $analyticsTempFiles[$fileType] = tempnam(sys_get_temp_dir(), 'dashboard-analytics-');
-                if ($analyticsTempFiles[$fileType] === false) {
-                    throw new RuntimeException('Could not create temporary files for Python analytics.');
+    } elseif (is_file($analyticsScript)) {
+        $pythonCandidates = array_values(array_filter([
+            getenv('PYTHON_EXECUTABLE') ?: null,
+            'python3',
+            '/usr/bin/python3',
+            '/usr/local/bin/python3',
+            'python',
+            '/usr/bin/python',
+            'py'
+        ]));
+        $pythonSuccess = false;
+
+        if (function_exists('proc_open')) {
+            $analyticsPayload = json_encode($analyticsInput, JSON_THROW_ON_ERROR);
+            foreach ($pythonCandidates as $candidate) {
+                $analyticsPipes = [];
+                $analyticsProcess = @proc_open(
+                    [$candidate, $analyticsScript],
+                    [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+                    $analyticsPipes,
+                    dirname($analyticsScript)
+                );
+                if (is_resource($analyticsProcess)) {
+                    $analyticsPayloadLength = strlen($analyticsPayload);
+                    $analyticsWritten = 0;
+                    $writeOk = true;
+                    while ($analyticsWritten < $analyticsPayloadLength) {
+                        $analyticsBytes = @fwrite($analyticsPipes[0], substr($analyticsPayload, $analyticsWritten));
+                        if ($analyticsBytes === false || $analyticsBytes === 0) {
+                            $writeOk = false;
+                            break;
+                        }
+                        $analyticsWritten += $analyticsBytes;
+                    }
+                    @fclose($analyticsPipes[0]);
+                    $out = @stream_get_contents($analyticsPipes[1]);
+                    $err = @stream_get_contents($analyticsPipes[2]);
+                    @fclose($analyticsPipes[1]);
+                    @fclose($analyticsPipes[2]);
+                    $code = @proc_close($analyticsProcess);
+                    if ($code === 0 && !empty($out)) {
+                        $analyticsOutput = $out;
+                        $pythonSuccess = true;
+                        break;
+                    }
                 }
             }
-            if (file_put_contents($analyticsTempFiles['input'], $analyticsPayload) !== strlen($analyticsPayload)) {
-                throw new RuntimeException('Could not write dashboard data for Python analytics.');
-            }
-            $analyticsCommand = escapeshellarg($pythonExecutable)
-                . ' ' . escapeshellarg($analyticsScript)
-                . ' < ' . escapeshellarg($analyticsTempFiles['input'])
-                . ' > ' . escapeshellarg($analyticsTempFiles['output'])
-                . ' 2> ' . escapeshellarg($analyticsTempFiles['error']);
-            exec($analyticsCommand, $analyticsCommandOutput, $analyticsExitCode);
-            $analyticsOutput = file_get_contents($analyticsTempFiles['output']);
-            $analyticsErrorOutput = file_get_contents($analyticsTempFiles['error']);
-            if ($analyticsOutput === false || $analyticsErrorOutput === false || $analyticsExitCode !== 0) {
-                throw new RuntimeException('Python analytics failed: ' . trim((string)$analyticsErrorOutput));
-            }
-        } finally {
-            foreach ($analyticsTempFiles as $analyticsTempFile) {
-                if (is_string($analyticsTempFile) && is_file($analyticsTempFile)) {
-                    unlink($analyticsTempFile);
+        }
+
+        if (!$pythonSuccess && function_exists('exec')) {
+            $analyticsPayload = json_encode($analyticsInput, JSON_THROW_ON_ERROR);
+            foreach ($pythonCandidates as $candidate) {
+                $analyticsTempFiles = [];
+                try {
+                    foreach (['input', 'output', 'error'] as $fileType) {
+                        $analyticsTempFiles[$fileType] = tempnam(sys_get_temp_dir(), 'dashboard-analytics-');
+                    }
+                    if ($analyticsTempFiles['input'] && file_put_contents($analyticsTempFiles['input'], $analyticsPayload) === strlen($analyticsPayload)) {
+                        $analyticsCommand = escapeshellarg($candidate)
+                            . ' ' . escapeshellarg($analyticsScript)
+                            . ' < ' . escapeshellarg($analyticsTempFiles['input'])
+                            . ' > ' . escapeshellarg($analyticsTempFiles['output'])
+                            . ' 2> ' . escapeshellarg($analyticsTempFiles['error']);
+                        $analyticsCommandOutput = [];
+                        $analyticsExitCode = -1;
+                        @exec($analyticsCommand, $analyticsCommandOutput, $analyticsExitCode);
+                        if ($analyticsExitCode === 0) {
+                            $out = @file_get_contents($analyticsTempFiles['output']);
+                            if (!empty($out)) {
+                                $analyticsOutput = $out;
+                                $pythonSuccess = true;
+                                break;
+                            }
+                        }
+                    }
+                } finally {
+                    foreach ($analyticsTempFiles as $tempFile) {
+                        if (is_string($tempFile) && is_file($tempFile)) {
+                            @unlink($tempFile);
+                        }
+                    }
                 }
             }
+        }
+
+        // If Python process execution is not available on host, execute embedded analytics engine
+        if (!$pythonSuccess) {
+            require_once dirname(__DIR__, 2) . '/Services/DashboardAnalyticsService.php';
+            $dashboardAnalytics = DashboardAnalyticsService::calculate($analyticsInput);
+            $analyticsOutput = json_encode($dashboardAnalytics, JSON_THROW_ON_ERROR);
         }
     } else {
-        throw new RuntimeException(
-            'Python analytics are not configured on this host. Set DASHBOARD_ANALYTICS_API_URL and DASHBOARD_ANALYTICS_API_TOKEN to a Python analytics API.'
-        );
+        require_once dirname(__DIR__, 2) . '/Services/DashboardAnalyticsService.php';
+        $dashboardAnalytics = DashboardAnalyticsService::calculate($analyticsInput);
+        $analyticsOutput = json_encode($dashboardAnalytics, JSON_THROW_ON_ERROR);
     }
 
     if (!is_string($analyticsOutput)) {
