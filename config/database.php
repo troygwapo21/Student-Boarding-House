@@ -32,6 +32,10 @@ if (strpos($serverHost, 'great-site.net') !== false || strpos($serverHost, 'infi
     define('DB_PASS', '8 Ball Pool');
     define('SITE_URL', 'https://fab-cafe.gleeze.com');
 }
+
+define('DB_CHARSET', 'utf8mb4');
+define('DB_PORT', 3306);
+
 define('SITE_NAME', 'Alondes Cda Dorm');
 define('SITE_EMAIL', 'alondescdadorm@gmail.com');
 
