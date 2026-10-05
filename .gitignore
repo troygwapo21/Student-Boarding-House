@@ -1,7 +1,3 @@
-# Composer
-/vendor/
-
-# Environment / Temp
-*.log
-.DS_Store
-Thumbs.db
+/config/dashboard_analytics.local.php
+/config/mail.local.php
+/app/analytics/__pycache__/

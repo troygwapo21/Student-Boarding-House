@@ -55,6 +55,7 @@ A complete, production-ready web-based boarding house management platform built 
 ## Requirements
 
 - PHP 8.0 or higher
+- Python 3.8 or higher for admin dashboard chart analytics
 - MySQL 5.7 or MySQL 8
 - XAMPP (Apache + MySQL)
 - Modern web browser
@@ -87,6 +88,30 @@ define('DB_USER', 'root');
 define('DB_PASS', '');
 define('SITE_URL', 'http://localhost/student_boarding_house');
 ```
+
+The admin dashboard calculates analytics exclusively in `app/analytics/dashboard_analytics.py`; PHP sends source data and renders the JSON response. The WSGI service requires Gunicorn, listed in `app/analytics/requirements.txt`. To deploy it on Render, push this project to a GitHub repository, choose **New > Blueprint** in Render, and select that repository. The root [`render.yaml`](./render.yaml) creates a Python web service in the Singapore region and generates the API token. After deployment, open the service's **Environment** page and copy the generated `DASHBOARD_ANALYTICS_API_TOKEN` value. Keep it private.
+
+The equivalent manual build and start commands are:
+
+```text
+gunicorn dashboard_analytics:application --bind 0.0.0.0:$PORT
+```
+
+The service exposes `GET /health` for a health check and authenticated `POST /analytics` for calculations. Confirm `https://<your-render-service>.onrender.com/health` returns `{"status":"ok"}` before configuring PHP. Render's free service may sleep when idle, so the first analytics request can be slower; the PHP request timeout allows up to 90 seconds. Use a trusted Python host: dashboard payment and student analytics data is sent to that service over HTTPS.
+
+After deployment, use the service's HTTPS URL ending in `/analytics` and configure it with the same token in a server-only `config/dashboard_analytics.local.php` file:
+
+```php
+<?php
+return [
+    'api_url' => 'https://your-python-host.example/analytics',
+    'api_token' => 'replace-with-the-same-long-random-secret',
+];
+```
+
+Do not commit this local file or use an unencrypted HTTP endpoint. The token must be at least 32 characters and must match the Python service's environment variable. The PHP dashboard also accepts `DASHBOARD_ANALYTICS_API_URL` and `DASHBOARD_ANALYTICS_API_TOKEN` environment variables. On a server where PHP can launch processes, it can run the module locally; set `PYTHON_EXECUTABLE` if Python is not on the PHP server's `PATH`. The `.gitignore` excludes local analytics configuration and local mail credentials.
+
+If neither a Python API URL nor local process execution is available, the admin dashboard still loads, displays an analytics-unavailable notice, and does not substitute PHP calculations or present fabricated analytics values.
 
 ### 4. Access the Application
 

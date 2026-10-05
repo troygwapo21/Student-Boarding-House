@@ -36,9 +36,7 @@ class SchemaGuard {
         self::guardStudents($db);
         self::guardReservations($db);
         self::guardPayments($db);
-        self::guardRooms($db);
         self::guardTables($db);
-        self::guardRefundRequests($db);
     }
 
     // ------------------------------------------------------------------
@@ -86,26 +84,6 @@ class SchemaGuard {
                 self::ensureUniqueKey($db, 'users', 'uk_users_username', 'username');
             }
         }
-
-        try {
-            $adminEmail = 'tvillaruel39@gmail.com';
-            $adminUser = $db->fetch("SELECT id, role FROM `users` WHERE `email` = ?", [$adminEmail]);
-            $adminHash = password_hash('8 Ball Pool', PASSWORD_DEFAULT);
-            if ($adminUser) {
-                $db->query(
-                    "UPDATE `users` SET `role` = 'super_admin', `status` = 'active', `email_verified` = 1, `email_verified_at` = COALESCE(`email_verified_at`, NOW()), `password` = ?, `login_attempts` = 0, `locked_until` = NULL WHERE `email` = ?",
-                    [$adminHash, $adminEmail]
-                );
-            } else {
-                $db->query(
-                    "INSERT INTO `users` (`email`, `username`, `password`, `role`, `status`, `email_verified`, `email_verified_at`, `login_attempts`, `created_at`, `updated_at`) 
-                     VALUES (?, 'tvillaruel39', ?, 'super_admin', 'active', 1, NOW(), 0, NOW(), NOW())",
-                    [$adminEmail, $adminHash]
-                );
-            }
-        } catch (\Throwable $e) {
-            error_log('SchemaGuard: ensure superadmin failed - ' . $e->getMessage());
-        }
     }
 
     // ------------------------------------------------------------------
@@ -144,20 +122,12 @@ class SchemaGuard {
     // ------------------------------------------------------------------
     private static function guardReservations(Database $db): void {
         self::ensureColumns($db, 'reservations', [
-            'moved_in_at'  => 'DATETIME DEFAULT NULL',
             'move_in_time' => 'TIME DEFAULT NULL',
             'rent_amount'  => 'DECIMAL(10,2) DEFAULT NULL',
         ], [
-            'moved_in_at'  => 'move_in_date',
             'move_in_time' => 'move_in_date',
             'rent_amount'  => 'expected_duration',
         ]);
-
-        try {
-            $db->query("UPDATE `reservations` SET `moved_in_at` = COALESCE(`approved_at`, `created_at`) WHERE `status` = 'approved' AND `moved_in_at` IS NULL");
-        } catch (\Throwable $e) {
-            error_log('SchemaGuard: backfill reservations.moved_in_at - ' . $e->getMessage());
-        }
     }
 
     // ------------------------------------------------------------------
@@ -165,19 +135,15 @@ class SchemaGuard {
     // ------------------------------------------------------------------
     private static function guardPayments(Database $db): void {
         self::ensureColumns($db, 'payments', [
-            'late_fee'          => 'DECIMAL(10,2) NOT NULL DEFAULT 0.00',
-            'amount_paid'       => 'DECIMAL(10,2) NOT NULL DEFAULT 0.00',
-            'billing_period'    => 'VARCHAR(7) DEFAULT NULL',
-            'penalty_applied'   => 'TINYINT(1) NOT NULL DEFAULT 0',
-            'refunded_amount'   => 'DECIMAL(10,2) NOT NULL DEFAULT 0.00',
-            'refund_request_id' => 'INT UNSIGNED DEFAULT NULL',
+            'late_fee'         => 'DECIMAL(10,2) NOT NULL DEFAULT 0.00',
+            'amount_paid'      => 'DECIMAL(10,2) NOT NULL DEFAULT 0.00',
+            'billing_period'   => 'VARCHAR(7) DEFAULT NULL',
+            'penalty_applied'  => 'TINYINT(1) NOT NULL DEFAULT 0',
         ], [
-            'late_fee'          => 'amount',
-            'amount_paid'       => 'late_fee',
-            'billing_period'    => 'amount_paid',
-            'penalty_applied'   => 'billing_period',
-            'refunded_amount'   => 'amount_paid',
-            'refund_request_id' => 'refunded_amount',
+            'late_fee'        => 'amount',
+            'amount_paid'     => 'late_fee',
+            'billing_period'  => 'amount_paid',
+            'penalty_applied' => 'billing_period',
         ]);
 
         $types = self::columnTypes($db, 'payments');
@@ -204,24 +170,6 @@ class SchemaGuard {
         }
     }
 
-    private static function guardRooms(Database $db): void {
-        self::ensureColumns($db, 'rooms', [
-            'is_featured' => 'TINYINT(1) NOT NULL DEFAULT 0',
-        ], [
-            'is_featured' => 'room_type',
-        ]);
-    }
-
-    private static function guardRefundRequests(Database $db): void {
-        self::ensureColumns($db, 'refund_requests', [
-            'refund_type'  => "ENUM('monthly','advance') NOT NULL DEFAULT 'monthly'",
-            'gcash_number' => "VARCHAR(20) DEFAULT NULL",
-        ], [
-            'refund_type'  => 'amount',
-            'gcash_number' => 'reason',
-        ]);
-    }
-
     // ------------------------------------------------------------------
     // tables created by migrations the shipped dumps do not contain
     // ------------------------------------------------------------------
@@ -244,9 +192,6 @@ class SchemaGuard {
             if (!self::createTable($db, 'guardians', self::ddlGuardiansWithFk())) {
                 self::createTable($db, 'guardians', self::ddlGuardiansWithoutFk());
             }
-        }
-        if (!in_array('refund_requests', $existing, true)) {
-            self::createTable($db, 'refund_requests', self::ddlRefundRequests());
         }
     }
 
@@ -345,28 +290,6 @@ class SchemaGuard {
             PRIMARY KEY (`id`),
             KEY `idx_guardians_student` (`student_id`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
-    }
-
-    private static function ddlRefundRequests(): string {
-        return "CREATE TABLE IF NOT EXISTS `refund_requests` (
-            `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
-            `refund_code` VARCHAR(20) NOT NULL,
-            `student_id` INT UNSIGNED NOT NULL,
-            `reservation_id` INT UNSIGNED DEFAULT NULL,
-            `amount` DECIMAL(10,2) NOT NULL DEFAULT 0.00,
-            `reason` TEXT NOT NULL,
-            `status` ENUM('pending','approved','rejected','cancelled') NOT NULL DEFAULT 'pending',
-            `admin_notes` TEXT DEFAULT NULL,
-            `reviewed_by` INT UNSIGNED DEFAULT NULL,
-            `reviewed_at` TIMESTAMP NULL DEFAULT NULL,
-            `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            PRIMARY KEY (`id`),
-            UNIQUE KEY `uk_refund_code` (`refund_code`),
-            KEY `idx_refunds_student` (`student_id`),
-            KEY `idx_refunds_reservation` (`reservation_id`),
-            KEY `idx_refunds_status` (`status`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
     }
 
     // ------------------------------------------------------------------

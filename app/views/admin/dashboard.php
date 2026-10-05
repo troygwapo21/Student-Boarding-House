@@ -3,200 +3,281 @@ $hour = (int)serverDate('H');
 $greeting = $hour < 12 ? 'Good morning' : ($hour < 18 ? 'Good afternoon' : 'Good evening');
 $adminName = $_SESSION['user_email'] ?? 'Admin';
 
+$analyticsScript = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'analytics' . DIRECTORY_SEPARATOR . 'dashboard_analytics.py';
+$analyticsInput = [
+    'as_of_date' => $analyticsAsOfDate,
+    'payments' => $analyticsChartPaymentRows,
+    'reservations' => $analyticsReservationRows,
+    'payment_methods' => $analyticsPaymentRows,
+    'rooms' => $analyticsRoomRows,
+    'students' => $analyticsStudentRows,
+];
+
+$analyticsAvailable = false;
+$analyticsError = null;
 $dashboardAnalytics = null;
-$analyticsUsingFallback = false;
-
-$analyticsScript = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'python_dashboard' . DIRECTORY_SEPARATOR . 'analytics' . DIRECTORY_SEPARATOR . 'dashboard_analytics.py';
-if (!file_exists($analyticsScript)) {
-    $analyticsScript = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'app' . DIRECTORY_SEPARATOR . 'analytics' . DIRECTORY_SEPARATOR . 'dashboard_analytics.py';
+$analyticsConfigPath = dirname(__DIR__, 3) . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR . 'dashboard_analytics.local.php';
+$analyticsLocalConfig = is_file($analyticsConfigPath) ? require $analyticsConfigPath : [];
+if (!is_array($analyticsLocalConfig)) {
+    $analyticsError = 'The local dashboard analytics configuration must return an array.';
+    $analyticsLocalConfig = [];
 }
-if (!file_exists($analyticsScript)) {
-    $analyticsScript = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'analytics' . DIRECTORY_SEPARATOR . 'dashboard_analytics.py';
+$analyticsApiUrl = trim((string)($analyticsLocalConfig['api_url'] ?? (getenv('DASHBOARD_ANALYTICS_API_URL') ?: '')));
+$analyticsApiToken = (string)($analyticsLocalConfig['api_token'] ?? (getenv('DASHBOARD_ANALYTICS_API_TOKEN') ?: ''));
+
+try {
+    if ($analyticsError !== null) {
+        throw new RuntimeException($analyticsError);
+    }
+    if ($analyticsApiUrl !== '') {
+        $analyticsUrlParts = parse_url($analyticsApiUrl);
+        if (
+            !is_array($analyticsUrlParts)
+            || strtolower($analyticsUrlParts['scheme'] ?? '') !== 'https'
+            || empty($analyticsUrlParts['host'])
+            || isset($analyticsUrlParts['user'])
+            || isset($analyticsUrlParts['pass'])
+            || isset($analyticsUrlParts['query'])
+            || isset($analyticsUrlParts['fragment'])
+            || strlen($analyticsApiToken) < 32
+        ) {
+            throw new RuntimeException('Configure a valid HTTPS analytics API URL and API token.');
+        }
+
+        $analyticsPayload = json_encode($analyticsInput, JSON_THROW_ON_ERROR);
+        if (function_exists('curl_init')) {
+            $analyticsCurl = curl_init($analyticsApiUrl);
+            if ($analyticsCurl === false) {
+                throw new RuntimeException('Could not initialize the HTTPS connection to the Python analytics API.');
+            }
+            $analyticsCurlConfigured = curl_setopt_array($analyticsCurl, [
+                CURLOPT_POST => true,
+                CURLOPT_POSTFIELDS => $analyticsPayload,
+                CURLOPT_HTTPHEADER => [
+                    'Content-Type: application/json',
+                    'Accept: application/json',
+                    'Authorization: Bearer ' . $analyticsApiToken,
+                ],
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_CONNECTTIMEOUT => 15,
+                CURLOPT_TIMEOUT => 90,
+            ]);
+            if (!$analyticsCurlConfigured) {
+                curl_close($analyticsCurl);
+                throw new RuntimeException('Could not configure the HTTPS connection to the Python analytics API.');
+            }
+            $analyticsOutput = curl_exec($analyticsCurl);
+            $analyticsHttpStatus = (int)curl_getinfo($analyticsCurl, CURLINFO_RESPONSE_CODE);
+            $analyticsCurlError = curl_error($analyticsCurl);
+            curl_close($analyticsCurl);
+            if ($analyticsOutput === false) {
+                throw new RuntimeException('Could not contact the Python analytics API: ' . $analyticsCurlError);
+            }
+        } else {
+            $analyticsContext = stream_context_create([
+                'http' => [
+                    'method' => 'POST',
+                    'header' => implode("\r\n", [
+                        'Content-Type: application/json',
+                        'Accept: application/json',
+                        'Authorization: Bearer ' . $analyticsApiToken,
+                    ]),
+                    'content' => $analyticsPayload,
+                    'timeout' => 90,
+                    'ignore_errors' => true,
+                ],
+                'ssl' => [
+                    'verify_peer' => true,
+                    'verify_peer_name' => true,
+                ],
+            ]);
+            $analyticsOutput = @file_get_contents($analyticsApiUrl, false, $analyticsContext);
+            $analyticsStatusLine = $http_response_header[0] ?? '';
+            preg_match('/\s(\d{3})\s/', $analyticsStatusLine, $analyticsStatusMatch);
+            $analyticsHttpStatus = (int)($analyticsStatusMatch[1] ?? 0);
+            if ($analyticsOutput === false) {
+                throw new RuntimeException('Could not contact the Python analytics API.');
+            }
+        }
+
+        if ($analyticsHttpStatus < 200 || $analyticsHttpStatus >= 300) {
+            throw new RuntimeException('Python analytics API returned HTTP ' . $analyticsHttpStatus . '.');
+        }
+    } elseif (is_file($analyticsScript) && function_exists('proc_open')) {
+        $analyticsPayload = json_encode($analyticsInput, JSON_THROW_ON_ERROR);
+        $pythonExecutable = getenv('PYTHON_EXECUTABLE') ?: 'python';
+        $analyticsProcess = proc_open(
+            [$pythonExecutable, $analyticsScript],
+            [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+            $analyticsPipes,
+            dirname($analyticsScript)
+        );
+        if (!is_resource($analyticsProcess)) {
+            throw new RuntimeException('Could not start Python. Configure DASHBOARD_ANALYTICS_API_URL on hosts without process execution.');
+        }
+        $analyticsPayloadLength = strlen($analyticsPayload);
+        $analyticsWritten = 0;
+        while ($analyticsWritten < $analyticsPayloadLength) {
+            $analyticsBytes = fwrite($analyticsPipes[0], substr($analyticsPayload, $analyticsWritten));
+            if ($analyticsBytes === false || $analyticsBytes === 0) {
+                fclose($analyticsPipes[0]);
+                fclose($analyticsPipes[1]);
+                fclose($analyticsPipes[2]);
+                proc_close($analyticsProcess);
+                throw new RuntimeException('Could not send dashboard data to Python.');
+            }
+            $analyticsWritten += $analyticsBytes;
+        }
+        fclose($analyticsPipes[0]);
+        $analyticsOutput = stream_get_contents($analyticsPipes[1]);
+        $analyticsErrorOutput = stream_get_contents($analyticsPipes[2]);
+        fclose($analyticsPipes[1]);
+        fclose($analyticsPipes[2]);
+        $analyticsExitCode = proc_close($analyticsProcess);
+        if ($analyticsExitCode !== 0) {
+            throw new RuntimeException('Python analytics failed: ' . trim((string)$analyticsErrorOutput));
+        }
+    } elseif (is_file($analyticsScript) && function_exists('exec')) {
+        $analyticsPayload = json_encode($analyticsInput, JSON_THROW_ON_ERROR);
+        $pythonExecutable = getenv('PYTHON_EXECUTABLE') ?: 'python';
+        $analyticsTempFiles = [];
+        try {
+            foreach (['input', 'output', 'error'] as $fileType) {
+                $analyticsTempFiles[$fileType] = tempnam(sys_get_temp_dir(), 'dashboard-analytics-');
+                if ($analyticsTempFiles[$fileType] === false) {
+                    throw new RuntimeException('Could not create temporary files for Python analytics.');
+                }
+            }
+            if (file_put_contents($analyticsTempFiles['input'], $analyticsPayload) !== strlen($analyticsPayload)) {
+                throw new RuntimeException('Could not write dashboard data for Python analytics.');
+            }
+            $analyticsCommand = escapeshellarg($pythonExecutable)
+                . ' ' . escapeshellarg($analyticsScript)
+                . ' < ' . escapeshellarg($analyticsTempFiles['input'])
+                . ' > ' . escapeshellarg($analyticsTempFiles['output'])
+                . ' 2> ' . escapeshellarg($analyticsTempFiles['error']);
+            exec($analyticsCommand, $analyticsCommandOutput, $analyticsExitCode);
+            $analyticsOutput = file_get_contents($analyticsTempFiles['output']);
+            $analyticsErrorOutput = file_get_contents($analyticsTempFiles['error']);
+            if ($analyticsOutput === false || $analyticsErrorOutput === false || $analyticsExitCode !== 0) {
+                throw new RuntimeException('Python analytics failed: ' . trim((string)$analyticsErrorOutput));
+            }
+        } finally {
+            foreach ($analyticsTempFiles as $analyticsTempFile) {
+                if (is_string($analyticsTempFile) && is_file($analyticsTempFile)) {
+                    unlink($analyticsTempFile);
+                }
+            }
+        }
+    } else {
+        throw new RuntimeException(
+            'Python analytics are not configured on this host. Set DASHBOARD_ANALYTICS_API_URL and DASHBOARD_ANALYTICS_API_TOKEN to a Python analytics API.'
+        );
+    }
+
+    if (!is_string($analyticsOutput)) {
+        throw new RuntimeException('Python analytics returned no response data.');
+    }
+    $dashboardAnalytics = json_decode((string)$analyticsOutput, true, 512, JSON_THROW_ON_ERROR);
+    $requiredAnalyticsKeys = [
+        'charts',
+        'revenue_by_type',
+        'revenue_by_method',
+        'room_type_stats',
+        'students_by_gender',
+        'students_by_year',
+        'total_capacity',
+        'total_occupied_beds',
+        'bed_occupancy_rate',
+        'occupancy_rate',
+    ];
+    if (!is_array($dashboardAnalytics)) {
+        throw new RuntimeException('Python analytics returned an invalid response shape.');
+    }
+    foreach ($requiredAnalyticsKeys as $key) {
+        if (!array_key_exists($key, $dashboardAnalytics)) {
+            throw new RuntimeException('Python analytics response is missing: ' . $key);
+        }
+    }
+    if (
+        !is_array($dashboardAnalytics['charts'])
+        || !isset($dashboardAnalytics['charts']['monthly'])
+        || !is_array($dashboardAnalytics['charts']['monthly'])
+        || !is_array($dashboardAnalytics['charts']['monthly']['labels'] ?? null)
+        || !is_array($dashboardAnalytics['charts']['monthly']['revenue'] ?? null)
+        || !is_array($dashboardAnalytics['charts']['monthly']['reservations'] ?? null)
+    ) {
+        throw new RuntimeException('Python analytics returned an invalid monthly chart.');
+    }
+    foreach (['revenue_by_type', 'revenue_by_method', 'room_type_stats', 'students_by_gender', 'students_by_year'] as $rowsKey) {
+        if (!is_array($dashboardAnalytics[$rowsKey])) {
+            throw new RuntimeException('Python analytics returned invalid rows for ' . $rowsKey . '.');
+        }
+    }
+    $monthlyChart = $dashboardAnalytics['charts']['monthly'];
+    if (
+        count($monthlyChart['labels']) !== 12
+        || count($monthlyChart['revenue']) !== 12
+        || count($monthlyChart['reservations']) !== 12
+    ) {
+        throw new RuntimeException('Python analytics must return exactly 12 monthly chart values.');
+    }
+    foreach ($monthlyChart['labels'] as $label) {
+        if (!is_string($label)) {
+            throw new RuntimeException('Python analytics returned an invalid chart label.');
+        }
+    }
+    foreach ($monthlyChart['revenue'] as $value) {
+        if (!is_numeric($value) || !is_finite((float)$value)) {
+            throw new RuntimeException('Python analytics returned an invalid monthly revenue value.');
+        }
+    }
+    foreach ($monthlyChart['reservations'] as $value) {
+        if (!is_int($value) || $value < 0) {
+            throw new RuntimeException('Python analytics returned an invalid reservation count.');
+        }
+    }
+    foreach (['total_capacity', 'total_occupied_beds', 'bed_occupancy_rate', 'occupancy_rate'] as $numberKey) {
+        if (!is_numeric($dashboardAnalytics[$numberKey]) || !is_finite((float)$dashboardAnalytics[$numberKey])) {
+            throw new RuntimeException('Python analytics returned an invalid value for ' . $numberKey . '.');
+        }
+    }
+    if (
+        $dashboardAnalytics['total_capacity'] < 0
+        || $dashboardAnalytics['total_occupied_beds'] < 0
+        || $dashboardAnalytics['bed_occupancy_rate'] < 0
+        || $dashboardAnalytics['bed_occupancy_rate'] > 100
+        || $dashboardAnalytics['occupancy_rate'] < 0
+        || $dashboardAnalytics['occupancy_rate'] > 100
+    ) {
+        throw new RuntimeException('Python analytics returned out-of-range occupancy values.');
+    }
+    $analyticsAvailable = true;
+} catch (RuntimeException | JsonException $exception) {
+    $analyticsError = $exception->getMessage();
+    error_log('Admin dashboard Python analytics unavailable: ' . $analyticsError);
 }
 
-$pythonFileExists = file_exists($analyticsScript);
-$pythonMissing = !$pythonFileExists;
-
-if ($pythonMissing) {
-    // When the Python analytics engine is removed/missing, clear all graph records and analytical stats
+if (!$analyticsAvailable) {
     $dashboardAnalytics = [
-        'charts' => [
-            'monthly' => [
-                'labels' => ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
-                'revenue' => [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-                'reservations' => [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-            ],
-        ],
+        'charts' => ['monthly' => ['labels' => [], 'revenue' => [], 'reservations' => []]],
         'revenue_by_type' => [],
         'revenue_by_method' => [],
         'room_type_stats' => [],
         'students_by_gender' => [],
+        'students_by_year' => [],
         'total_capacity' => 0,
         'total_occupied_beds' => 0,
         'bed_occupancy_rate' => 0,
         'occupancy_rate' => 0,
     ];
-} else {
-    if (function_exists('proc_open')) {
-        try {
-            $analyticsInput = [
-                'as_of_date' => $analyticsAsOfDate ?? serverDate('Y-m-d'),
-                'payments' => $analyticsChartPaymentRows ?? [],
-                'reservations' => $analyticsReservationRows ?? [],
-                'payment_methods' => $analyticsPaymentRows ?? [],
-                'rooms' => $analyticsRoomRows ?? [],
-                'students' => $analyticsStudentRows ?? [],
-            ];
-
-            $pythonExecutable = getenv('PYTHON_EXECUTABLE') ?: 'python';
-            $analyticsPayload = json_encode($analyticsInput, JSON_THROW_ON_ERROR);
-            $analyticsProcess = @proc_open(
-                [$pythonExecutable, $analyticsScript],
-                [
-                    0 => ['pipe', 'r'],
-                    1 => ['pipe', 'w'],
-                    2 => ['pipe', 'w'],
-                ],
-                $analyticsPipes,
-                dirname($analyticsScript)
-            );
-            if (is_resource($analyticsProcess)) {
-                fwrite($analyticsPipes[0], $analyticsPayload);
-                fclose($analyticsPipes[0]);
-
-                $analyticsOutput = stream_get_contents($analyticsPipes[1]);
-                $analyticsError = stream_get_contents($analyticsPipes[2]);
-                fclose($analyticsPipes[1]);
-                fclose($analyticsPipes[2]);
-                $exitCode = proc_close($analyticsProcess);
-
-                if ($exitCode === 0 && !empty($analyticsOutput)) {
-                    $decoded = json_decode((string)$analyticsOutput, true);
-                    if (is_array($decoded) && isset($decoded['charts']['monthly'])) {
-                        $dashboardAnalytics = $decoded;
-                    }
-                }
-            }
-        } catch (\Throwable $e) {
-            error_log('Python dashboard analytics execution note: ' . $e->getMessage());
-        }
-    }
-
-if ($dashboardAnalytics === null) {
-    $analyticsUsingFallback = true;
-    $monthDates = [];
-    $monthKeys = [];
-    for ($i = 11; $i >= 0; $i--) {
-        $month = new DateTime('first day of this month');
-        $month->modify("-{$i} months");
-        $monthDates[] = $month;
-        $monthKeys[] = $month->format('Y-m');
-    }
-    $revenueByMonth = array_fill_keys($monthKeys, 0.0);
-    $reservationsByMonth = array_fill_keys($monthKeys, 0);
-    $fallbackRevenueByType = [];
-    foreach ($analyticsChartPaymentRows as $payment) {
-        if (!in_array($payment['status'] ?? '', ['paid', 'partially_paid', 'refunded'], true) || (float)($payment['amount_paid'] ?? 0) <= 0) {
-            continue;
-        }
-        $paymentDate = new DateTime($payment['paid_at']);
-        $monthKey = $paymentDate->format('Y-m');
-        if (!array_key_exists($monthKey, $revenueByMonth)) {
-            continue;
-        }
-        $netAmount = (float)$payment['amount_paid'] - (float)($payment['refunded_amount'] ?? 0);
-        $revenueByMonth[$monthKey] += $netAmount;
-        if ($monthKey === end($monthKeys)) {
-            $paymentType = $payment['payment_type'] ?: 'other';
-            $fallbackRevenueByType[$paymentType] = ($fallbackRevenueByType[$paymentType] ?? 0) + $netAmount;
-        }
-    }
-    foreach ($analyticsReservationRows as $reservation) {
-        $monthKey = (new DateTime($reservation['created_at']))->format('Y-m');
-        if (array_key_exists($monthKey, $reservationsByMonth)) {
-            $reservationsByMonth[$monthKey]++;
-        }
-    }
-    $fallbackRevenueByMethod = [];
-    foreach ($analyticsPaymentRows as $payment) {
-        if (!in_array($payment['status'] ?? '', ['paid', 'partially_paid', 'refunded'], true) || (float)($payment['amount_paid'] ?? 0) <= 0) {
-            continue;
-        }
-        $method = strtolower(trim($payment['method'] ?? '')) ?: 'cash';
-        $fallbackRevenueByMethod[$method] = ($fallbackRevenueByMethod[$method] ?? 0)
-            + (float)$payment['amount_paid'] - (float)($payment['refunded_amount'] ?? 0);
-    }
-    $fallbackRoomTypes = [];
-    $totalCapacity = 0;
-    $totalOccupiedBeds = 0;
-    $occupiedRoomCount = 0;
-    foreach ($analyticsRoomRows as $room) {
-        $roomType = strtolower(trim($room['room_type'] ?? '')) ?: 'other';
-        $capacity = (int)($room['max_capacity'] ?? 0);
-        $occupiedBeds = (int)($room['current_occupancy'] ?? 0);
-        if (!isset($fallbackRoomTypes[$roomType])) {
-            $fallbackRoomTypes[$roomType] = [
-                'room_type' => $roomType,
-                'total_rooms' => 0,
-                'occupied' => 0,
-                'occupied_beds' => 0,
-                'capacity' => 0,
-            ];
-        }
-        $fallbackRoomTypes[$roomType]['total_rooms']++;
-        $fallbackRoomTypes[$roomType]['occupied'] += ($room['status'] ?? '') === 'occupied' ? 1 : 0;
-        $fallbackRoomTypes[$roomType]['occupied_beds'] += $occupiedBeds;
-        $fallbackRoomTypes[$roomType]['capacity'] += $capacity;
-        $totalCapacity += $capacity;
-        $totalOccupiedBeds += $occupiedBeds;
-        $occupiedRoomCount += ($room['status'] ?? '') === 'occupied' ? 1 : 0;
-    }
-    ksort($fallbackRoomTypes);
-    $fallbackGenders = [];
-    foreach ($analyticsStudentRows as $student) {
-        $gender = strtolower(trim($student['gender'] ?? '')) ?: 'other';
-        $fallbackGenders[$gender] = ($fallbackGenders[$gender] ?? 0) + 1;
-    }
-    ksort($fallbackGenders);
-    ksort($fallbackRevenueByType);
-    ksort($fallbackRevenueByMethod);
-
-    $dashboardAnalytics = [
-        'charts' => [
-            'monthly' => [
-                'labels' => array_map(static fn(DateTime $month): string => $month->format('M'), $monthDates),
-                'revenue' => array_values(array_map(static fn($total): float => round($total, 2), $revenueByMonth)),
-                'reservations' => array_values($reservationsByMonth),
-            ],
-        ],
-        'revenue_by_type' => array_map(
-            static fn($type, $total): array => ['payment_type' => $type, 'total' => round($total, 2)],
-            array_keys($fallbackRevenueByType),
-            array_values($fallbackRevenueByType)
-        ),
-        'revenue_by_method' => array_map(
-            static fn($method, $total): array => ['method' => $method, 'total' => round($total, 2)],
-            array_keys($fallbackRevenueByMethod),
-            array_values($fallbackRevenueByMethod)
-        ),
-        'room_type_stats' => array_values($fallbackRoomTypes),
-        'students_by_gender' => array_map(
-            static fn($gender, $count): array => ['gender' => $gender, 'c' => $count],
-            array_keys($fallbackGenders),
-            array_values($fallbackGenders)
-        ),
-        'total_capacity' => $totalCapacity,
-        'total_occupied_beds' => $totalOccupiedBeds,
-        'bed_occupancy_rate' => $totalCapacity > 0 ? (int)round(($totalOccupiedBeds / $totalCapacity) * 100) : 0,
-        'occupancy_rate' => count($analyticsRoomRows) > 0 ? (int)round(($occupiedRoomCount / count($analyticsRoomRows)) * 100) : 0,
-    ];
-}
 }
 
 $revenueByType = $dashboardAnalytics['revenue_by_type'];
 $revenueByMethod = $dashboardAnalytics['revenue_by_method'];
 $roomTypeStats = $dashboardAnalytics['room_type_stats'];
 $studentsByGender = $dashboardAnalytics['students_by_gender'];
+$studentsByYear = $dashboardAnalytics['students_by_year'];
 $totalCapacity = $dashboardAnalytics['total_capacity'];
 $totalOccupiedBeds = $dashboardAnalytics['total_occupied_beds'];
 $bedOccupancyRate = $dashboardAnalytics['bed_occupancy_rate'];
@@ -414,20 +495,9 @@ $needsAttention = (int)$openMaintenance + (int)$openComplaints + (int)$unreadFee
 </style>
 
 <div class="s-go">
-    <?php if ($pythonMissing): ?>
-    <div class="d-inline-flex align-items-center gap-2 mb-3 px-3 py-1 rounded-pill" style="background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.3);color:#dc2626;font-size:12px;font-weight:600;">
-        <i class="fas fa-circle-xmark" style="color:#dc2626;"></i> Python Analytics Engine Removed &middot; <code>python_dashboard/analytics/dashboard_analytics.py</code> Not Found
-    </div>
-    <div class="alert alert-danger d-flex align-items-center gap-3 mb-4 shadow-sm" role="alert" style="border-radius:12px;background:#fef2f2;border:1px solid #fecaca;color:#991b1b;">
-        <i class="fas fa-triangle-exclamation fa-2x" style="color:#ef4444;"></i>
-        <div>
-            <strong style="font-size:14px;">Python Analytics File Missing / Removed</strong>
-            <div style="font-size:12.5px;margin-top:2px;">The analytics script <code>python_dashboard/analytics/dashboard_analytics.py</code> cannot be found. All dashboard graph records, sales metrics, and distributions have been cleared.</div>
-        </div>
-    </div>
-    <?php else: ?>
-    <div class="d-inline-flex align-items-center gap-2 mb-3 px-3 py-1 rounded-pill" style="background:rgba(56,189,248,0.12);border:1px solid rgba(56,189,248,0.3);color:#0284c7;font-size:12px;font-weight:600;">
-        <i class="fab fa-python" style="color:#0284c7;"></i> Python Analytics Integration Active &middot; Powered by <code>python_dashboard/analytics/dashboard_analytics.py</code>
+    <?php if (!$analyticsAvailable): ?>
+    <div class="alert alert-warning py-2 mb-3" role="status">
+        Python analytics are currently unavailable. <?= e($analyticsError ?: 'Configure a Python analytics API endpoint for this host.') ?> Analytics values are not being calculated in PHP.
     </div>
     <?php endif; ?>
     <!-- Header -->
@@ -507,11 +577,11 @@ $needsAttention = (int)$openMaintenance + (int)$openComplaints + (int)$unreadFee
                     <span class="s-view-hint"><i class="fas fa-arrow-right me-1"></i> View Rooms</span>
                     <div class="s-kpi-top">
                         <div class="s-kpi-ico" style="background:#f3eefe;color:#7c3aed;"><i class="fas fa-door-open"></i></div>
-                        <span class="s-kpi-badge flat"><i class="fas fa-chart-pie"></i> <?= $bedOccupancyRate ?>% bed fill</span>
+                        <span class="s-kpi-badge flat"><i class="fas fa-chart-pie"></i> <?= $analyticsAvailable ? $bedOccupancyRate . '% bed fill' : 'Analytics unavailable' ?></span>
                     </div>
                     <div class="s-kpi-val s-count" data-count="<?= (int)$totalRooms ?>"><?= $totalRooms ?></div>
                     <div class="s-kpi-label">Total Rooms</div>
-                    <div class="s-kpi-foot"><i class="fas fa-people-roof"></i> <?= $totalOccupiedBeds ?>/<?= $totalCapacity ?> beds &middot; <?= $occupiedRooms ?> rooms occupied</div>
+                    <div class="s-kpi-foot"><i class="fas fa-people-roof"></i> <?= $analyticsAvailable ? $totalOccupiedBeds . '/' . $totalCapacity . ' beds &middot; ' : '' ?><?= $occupiedRooms ?> rooms occupied</div>
                 </div>
             </a>
         </div>
@@ -535,11 +605,11 @@ $needsAttention = (int)$openMaintenance + (int)$openComplaints + (int)$unreadFee
                     <span class="s-view-hint"><i class="fas fa-arrow-right me-1"></i> View Rooms</span>
                     <div class="s-kpi-top">
                         <div class="s-kpi-ico" style="background:#e0f2fe;color:#0ea5e9;"><i class="fas fa-chart-pie"></i></div>
-                    <span class="s-kpi-badge <?= $bedOccupancyRate >= 70 ? 'down' : 'up' ?>"><i class="fas fa-fire"></i> <?= $bedOccupancyRate >= 70 ? 'High' : 'Healthy' ?></span>
+                    <span class="s-kpi-badge <?= $analyticsAvailable && $bedOccupancyRate >= 70 ? 'down' : 'flat' ?>"><i class="fas fa-fire"></i> <?= $analyticsAvailable ? ($bedOccupancyRate >= 70 ? 'High' : 'Healthy') : 'Unavailable' ?></span>
                 </div>
-                <div class="s-kpi-val s-count" data-count="<?= (int)$bedOccupancyRate ?>" data-suffix="%"><?= $bedOccupancyRate ?>%</div>
+                <div class="s-kpi-val <?= $analyticsAvailable ? 's-count' : '' ?>" <?= $analyticsAvailable ? 'data-count="' . (int)$bedOccupancyRate . '" data-suffix="%"' : '' ?>><?= $analyticsAvailable ? $bedOccupancyRate . '%' : 'N/A' ?></div>
                 <div class="s-kpi-label">Occupancy Rate (Beds)</div>
-                <div class="s-kpi-foot"><i class="fas fa-tag"></i> <?= $totalOccupiedBeds ?> of <?= $totalCapacity ?> beds &middot; <?= $occupancyRate ?>% rooms</div>
+                <div class="s-kpi-foot"><i class="fas fa-tag"></i> <?= $analyticsAvailable ? $totalOccupiedBeds . ' of ' . $totalCapacity . ' beds &middot; ' . $occupancyRate . '% rooms' : 'Python analytics unavailable' ?></div>
                 </div>
             </a>
         </div>
@@ -552,13 +622,13 @@ $needsAttention = (int)$openMaintenance + (int)$openComplaints + (int)$unreadFee
                 <div class="s-card-h">
                     <h6><i class="fas fa-chart-column me-2" style="color:#6366f1;"></i>Revenue &amp; Reservations</h6>
                     <div class="d-flex align-items-center gap-2 small flex-wrap">
-                        <span class="s-legend" style="background:#f0f9ff;border-color:#bae6fd;color:#0284c7;"><i style="background:#0284c7;"></i><i class="fab fa-python me-1"></i>Python Engine</span>
                         <span class="s-legend"><i style="background:#6366f1"></i>Revenue</span>
                         <span class="s-legend"><i style="background:#f59e0b"></i>Reservations</span>
                         <a href="<?= url('/admin/payments') ?>" class="small ms-1">View Payments</a>
                     </div>
                 </div>
                 <div class="s-card-b" style="position:relative;">
+                    <?php if ($analyticsAvailable): ?>
                     <div style="height:260px;">
                         <canvas id="revenueChart"></canvas>
                     </div>
@@ -569,6 +639,9 @@ $needsAttention = (int)$openMaintenance + (int)$openComplaints + (int)$unreadFee
                         <div class="div"></div>
                         <div class="c"><i class="fas fa-calendar-check" style="color:#8b5cf6"></i><span>Reservations</span><b id="sumRes">--</b></div>
                     </div>
+                    <?php else: ?>
+                    <div class="s-empty"><i class="fas fa-chart-column"></i><p>Chart data is unavailable until the Python analytics API is configured.</p></div>
+                    <?php endif; ?>
                 </div>
             </div>
         </div>
@@ -578,12 +651,10 @@ $needsAttention = (int)$openMaintenance + (int)$openComplaints + (int)$unreadFee
                 <span class="s-view-hint"><i class="fas fa-arrow-right me-1"></i> Manage Rooms</span>
                 <div class="s-card-h">
                     <h6><i class="fas fa-gauge-high me-2" style="color:#0ea5e9;"></i>Occupancy Gauge</h6>
-                    <div class="d-flex align-items-center gap-2">
-                        <span class="s-legend" style="background:#f0f9ff;border-color:#bae6fd;color:#0284c7;"><i style="background:#0284c7;"></i><i class="fab fa-python me-1"></i>Python</span>
-                        <a href="<?= url('/admin/rooms') ?>">Manage</a>
-                    </div>
+                    <a href="<?= url('/admin/rooms') ?>">Manage</a>
                 </div>
                 <div class="s-card-b">
+                    <?php if ($analyticsAvailable): ?>
                     <div class="s-gauge-wrap">
                         <div class="s-gauge-canvas">
                             <canvas id="occupancyGauge" height="150"></canvas>
@@ -600,6 +671,9 @@ $needsAttention = (int)$openMaintenance + (int)$openComplaints + (int)$unreadFee
                         <div class="s-gs"><i class="fas fa-door-open" style="color:#10b981"></i><b><?= $availableRooms ?></b><span>Available</span></div>
                         <div class="s-gs"><i class="fas fa-lock" style="color:#8b5cf6"></i><b><?= $fullyOccupiedRooms ?></b><span>Full Rooms</span></div>
                     </div>
+                    <?php else: ?>
+                    <div class="s-empty"><i class="fas fa-gauge-high"></i><p>Occupancy analytics are unavailable until the Python analytics API is configured.</p></div>
+                    <?php endif; ?>
                 </div>
             </div>
         </div>
@@ -612,10 +686,7 @@ $needsAttention = (int)$openMaintenance + (int)$openComplaints + (int)$unreadFee
                 <span class="s-view-hint"><i class="fas fa-arrow-right me-1"></i> Open Reports</span>
                 <div class="s-card-h">
                     <h6><i class="fas fa-layer-group me-2" style="color:#8b5cf6;"></i>Sales by Type (This Month)</h6>
-                    <div class="d-flex align-items-center gap-2">
-                        <span class="s-legend" style="background:#f0f9ff;border-color:#bae6fd;color:#0284c7;"><i style="background:#0284c7;"></i><i class="fab fa-python me-1"></i>Python</span>
-                        <a href="<?= url('/admin/reports') ?>">Reports</a>
-                    </div>
+                    <a href="<?= url('/admin/reports') ?>">Reports</a>
                 </div>
                 <div class="s-card-b">
                     <?php if ($payTypeTotal > 0): ?>
@@ -638,7 +709,7 @@ $needsAttention = (int)$openMaintenance + (int)$openComplaints + (int)$unreadFee
                         <?php endforeach; ?>
                     </div>
                     <?php else: ?>
-                    <div class="s-empty"><i class="fas fa-receipt"></i><p>No sales recorded this month.</p></div>
+                    <div class="s-empty"><i class="fas fa-receipt"></i><p><?= $analyticsAvailable ? 'No sales recorded this month.' : 'Sales analytics unavailable until the Python API is configured.' ?></p></div>
                     <?php endif; ?>
                 </div>
             </div>
@@ -648,10 +719,7 @@ $needsAttention = (int)$openMaintenance + (int)$openComplaints + (int)$unreadFee
                 <span class="s-view-hint"><i class="fas fa-arrow-right me-1"></i> View Payments</span>
                 <div class="s-card-h">
                     <h6><i class="fas fa-money-bill-wave me-2" style="color:#059669;"></i>Payment Method</h6>
-                    <div class="d-flex align-items-center gap-2">
-                        <span class="s-legend" style="background:#f0f9ff;border-color:#bae6fd;color:#0284c7;"><i style="background:#0284c7;"></i><i class="fab fa-python me-1"></i>Python</span>
-                        <span class="s-legend">Lifetime</span>
-                    </div>
+                    <span class="s-legend">Lifetime</span>
                 </div>
                 <div class="s-card-b">
                     <?php if ($methodTotal > 0): ?>
@@ -674,7 +742,7 @@ $needsAttention = (int)$openMaintenance + (int)$openComplaints + (int)$unreadFee
                         <?php endforeach; ?>
                     </div>
                     <?php else: ?>
-                    <div class="s-empty"><i class="fas fa-wallet"></i><p>No payment records yet.</p></div>
+                    <div class="s-empty"><i class="fas fa-wallet"></i><p><?= $analyticsAvailable ? 'No payment records yet.' : 'Payment analytics unavailable until the Python API is configured.' ?></p></div>
                     <?php endif; ?>
                 </div>
             </div>
@@ -720,8 +788,9 @@ $needsAttention = (int)$openMaintenance + (int)$openComplaints + (int)$unreadFee
                     <a href="<?= url('/admin/students') ?>">Students</a>
                 </div>
                 <div class="s-card-b">
-                    <div style="height:150px;position:relative;">
-                        <canvas id="genderChart"></canvas>
+                <?php if ($analyticsAvailable): ?>
+                <div style="height:150px;position:relative;">
+                    <canvas id="genderChart"></canvas>
                         <div class="s-gauge-center" style="pointer-events:none;">
                             <b style="font-size:22px;font-weight:800;color:#0f172a;"><?= (int)$totalStudents ?></b>
                             <div style="font-size:10.5px;font-weight:700;color:#94a3b8;text-transform:uppercase;">students</div>
@@ -733,6 +802,9 @@ $needsAttention = (int)$openMaintenance + (int)$openComplaints + (int)$unreadFee
                         <span style="font-size:12px;font-weight:600;color:#475569;"><i style="width:9px;height:9px;border-radius:50%;background:<?= $gclr ?>;display:inline-block;margin-right:4px;"></i><?= e($glbl ) ?> <?= $gc ?> (<?= $totalStudents > 0 ? round(($gc / $totalStudents) * 100) : 0 ?>%)</span>
                         <?php endforeach; ?>
                     </div>
+                    <?php else: ?>
+                    <div class="s-empty"><i class="fas fa-users"></i><p>Student demographics are unavailable until the Python API is configured.</p></div>
+                    <?php endif; ?>
                     <div style="margin-top:14px;padding-top:12px;border-top:1px dashed #e9eef5;">
                         <?php foreach (($studentsByYear ?? []) as $y): ?>
                         <?php $ypct = $totalStudents > 0 ? round(((int)$y['c'] / $totalStudents) * 100) : 0; ?>
@@ -791,10 +863,10 @@ $needsAttention = (int)$openMaintenance + (int)$openComplaints + (int)$unreadFee
                     <?php if ($totalRooms > 0): ?>
                     <div class="d-flex align-items-center justify-content-between" style="margin-top:18px;padding-top:16px;border-top:1px dashed #e9eef5;">
                         <span style="font-size:12.5px;font-weight:600;color:#64748b;">Overall Occupancy</span>
-                        <span style="font-size:17px;font-weight:800;color:#4f46e5;"><?= $occupancyRate ?>%</span>
+                        <span style="font-size:17px;font-weight:800;color:#4f46e5;"><?= $analyticsAvailable ? $occupancyRate . '%' : 'N/A' ?></span>
                     </div>
                     <div style="height:6px;background:#eef2f7;border-radius:3px;margin-top:8px;overflow:hidden;">
-                        <div class="occupancy-fill" data-w="<?= $occupancyRate ?>" style="height:100%;width:0;background:linear-gradient(90deg,#6366f1,#8b5cf6);border-radius:3px;transition:width .6s;"></div>
+                        <div class="occupancy-fill" data-w="<?= $analyticsAvailable ? $occupancyRate : 0 ?>" style="height:100%;width:0;background:linear-gradient(90deg,#6366f1,#8b5cf6);border-radius:3px;transition:width .6s;"></div>
                     </div>
                     <?php endif; ?>
                 </div>
@@ -981,8 +1053,8 @@ $needsAttention = (int)$openMaintenance + (int)$openComplaints + (int)$unreadFee
                                             <tr><td style="padding:.5rem 0;color:#334155;font-weight:600;">Occupied Rooms</td><td class="text-end" style="padding:.5rem 0;color:#f59e0b;font-weight:700;"><?= number_format($occupiedRooms ?? 0) ?></td></tr>
                                             <tr><td style="padding:.5rem 0;color:#334155;font-weight:600;">Available Rooms</td><td class="text-end" style="padding:.5rem 0;color:#10b981;font-weight:700;"><?= number_format($availableRooms ?? 0) ?></td></tr>
                                             <tr><td style="padding:.5rem 0;color:#334155;font-weight:600;">Reserved Rooms</td><td class="text-end" style="padding:.5rem 0;color:#8b5cf6;font-weight:700;"><?= number_format($reservedRooms ?? 0) ?></td></tr>
-                                            <tr><td style="padding:.5rem 0;color:#334155;font-weight:600;">Occupancy Rate (Rooms)</td><td class="text-end" style="padding:.5rem 0;color:#4f46e5;font-weight:700;"><?= number_format($occupancyRate ?? 0, 1) ?>%</td></tr>
-                                            <tr><td style="padding:.5rem 0;color:#334155;font-weight:600;">Bed Occupancy Rate</td><td class="text-end" style="padding:.5rem 0;color:#4f46e5;font-weight:700;"><?= number_format($bedOccupancyRate ?? 0, 1) ?>%</td></tr>
+                                            <tr><td style="padding:.5rem 0;color:#334155;font-weight:600;">Occupancy Rate (Rooms)</td><td class="text-end" style="padding:.5rem 0;color:#4f46e5;font-weight:700;"><?= $analyticsAvailable ? number_format($occupancyRate, 1) . '%' : 'N/A' ?></td></tr>
+                                            <tr><td style="padding:.5rem 0;color:#334155;font-weight:600;">Bed Occupancy Rate</td><td class="text-end" style="padding:.5rem 0;color:#4f46e5;font-weight:700;"><?= $analyticsAvailable ? number_format($bedOccupancyRate, 1) . '%' : 'N/A' ?></td></tr>
                                         </tbody>
                                     </table>
                                 </div>

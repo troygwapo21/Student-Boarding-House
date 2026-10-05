@@ -27,11 +27,6 @@ class AdminController extends Controller {
         $fullyOccupiedRooms = $this->db->count('rooms', "status = 'occupied' AND current_occupancy >= max_capacity");
         $occupancyRate = $totalRooms > 0 ? round(($occupiedRooms / $totalRooms) * 100) : 0;
 
-        $capacityInfo = $this->db->fetch("SELECT COALESCE(SUM(max_capacity), 0) AS cap, COALESCE(SUM(current_occupancy), 0) AS occ FROM rooms");
-        $totalCapacity = (int)($capacityInfo['cap'] ?? 0);
-        $totalOccupiedBeds = (int)($capacityInfo['occ'] ?? 0);
-        $bedOccupancyRate = $totalCapacity > 0 ? round(($totalOccupiedBeds / $totalCapacity) * 100) : 0;
-
         $totalRevenue = (float)($this->db->fetch("SELECT COALESCE(SUM(amount_paid - COALESCE(refunded_amount, 0)), 0) as total FROM payments WHERE status IN ('paid','partially_paid','refunded') AND amount_paid > 0")['total'] ?? 0);
         $thisMonthRevenue = (float)($this->db->fetch("SELECT COALESCE(SUM(amount_paid - COALESCE(refunded_amount, 0)), 0) as total FROM payments WHERE status IN ('paid','partially_paid','refunded') AND amount_paid > 0 AND MONTH(COALESCE(paid_at, created_at)) = MONTH(CURDATE()) AND YEAR(COALESCE(paid_at, created_at)) = YEAR(CURDATE())")['total'] ?? 0);
         $lastMonthRevenue = (float)($this->db->fetch("SELECT COALESCE(SUM(amount_paid - COALESCE(refunded_amount, 0)), 0) as total FROM payments WHERE status IN ('paid','partially_paid','refunded') AND amount_paid > 0 AND MONTH(COALESCE(paid_at, created_at)) = MONTH(DATE_SUB(CURDATE(), INTERVAL 1 MONTH)) AND YEAR(COALESCE(paid_at, created_at)) = YEAR(DATE_SUB(CURDATE(), INTERVAL 1 MONTH))")['total'] ?? 0);
@@ -40,10 +35,6 @@ class AdminController extends Controller {
         $lastWeekRevenue = (float)($this->db->fetch("SELECT COALESCE(SUM(amount_paid - COALESCE(refunded_amount, 0)), 0) AS total FROM payments WHERE status IN ('paid','partially_paid','refunded') AND amount_paid > 0 AND YEARWEEK(COALESCE(paid_at, created_at), 1) = YEARWEEK(CURDATE(), 1) - 1")['total'] ?? 0);
         $avgMonthlyRevenue = (float)($this->db->fetch("SELECT COALESCE(AVG(m.total), 0) AS avg_total FROM (SELECT DATE_FORMAT(COALESCE(paid_at, created_at), '%Y-%m') AS ym, SUM(amount_paid - COALESCE(refunded_amount,0)) AS total FROM payments WHERE status IN ('paid','partially_paid','refunded') AND amount_paid > 0 GROUP BY ym) m")['avg_total'] ?? 0);
         $bestMonth = $this->db->fetch("SELECT DATE_FORMAT(COALESCE(paid_at, created_at), '%M %Y') AS label, SUM(amount_paid - COALESCE(refunded_amount,0)) AS total FROM payments WHERE status IN ('paid','partially_paid','refunded') AND amount_paid > 0 GROUP BY DATE_FORMAT(COALESCE(paid_at, created_at), '%Y-%m') ORDER BY total DESC LIMIT 1");
-        $revenueByMethod = $this->db->fetchAll("SELECT COALESCE(NULLIF(payment_method,''), 'cash') AS method, SUM(amount_paid - COALESCE(refunded_amount,0)) AS total FROM payments WHERE status IN ('paid','partially_paid','refunded') AND amount_paid > 0 GROUP BY COALESCE(NULLIF(payment_method,''),'cash')");
-        $revenueByType = $this->db->fetchAll("SELECT payment_type, SUM(amount_paid - COALESCE(refunded_amount,0)) AS total FROM payments WHERE status IN ('paid','partially_paid','refunded') AND amount_paid > 0 AND MONTH(COALESCE(paid_at, created_at)) = MONTH(CURDATE()) AND YEAR(COALESCE(paid_at, created_at)) = YEAR(CURDATE()) GROUP BY payment_type");
-        $roomTypeStats = $this->db->fetchAll("SELECT room_type, COUNT(*) AS total_rooms, SUM(CASE WHEN status = 'occupied' THEN 1 ELSE 0 END) AS occupied, SUM(current_occupancy) AS occupied_beds, SUM(max_capacity) AS capacity FROM rooms GROUP BY room_type");
-        $studentsByGender = $this->db->fetchAll("SELECT COALESCE(NULLIF(gender,''), 'other') AS gender, COUNT(*) AS c FROM students GROUP BY COALESCE(NULLIF(gender,''),'other')");
         $analyticsPaymentRows = $this->db->fetchAll(
             "SELECT payment_method AS method, amount_paid, COALESCE(refunded_amount, 0) AS refunded_amount, status
              FROM payments
@@ -62,8 +53,9 @@ class AdminController extends Controller {
         $analyticsRoomRows = $this->db->fetchAll(
             "SELECT room_type, status, current_occupancy, max_capacity FROM rooms"
         );
-        $analyticsStudentRows = $this->db->fetchAll("SELECT gender FROM students");
-        $studentsByYear = $this->db->fetchAll("SELECT COALESCE(NULLIF(year_level,''), 'N/A') AS year_level, COUNT(*) AS c FROM students GROUP BY COALESCE(NULLIF(year_level,''),'N/A') ORDER BY c DESC LIMIT 6");
+        $analyticsStudentRows = $this->db->fetchAll(
+            "SELECT gender, COALESCE(NULLIF(year_level,''), 'N/A') AS year_level FROM students"
+        );
         $newStudentsThisMonth = $this->db->count('students', "created_at >= DATE_FORMAT(CURDATE(), '%Y-%m-01')");
         $newReservationsThisMonth = $this->db->count('reservations', "created_at >= DATE_FORMAT(CURDATE(), '%Y-%m-01')");
         $activeTenants = (int)($this->db->fetch("SELECT COUNT(DISTINCT student_id) AS c FROM reservations WHERE status = 'approved'")['c'] ?? 0);
@@ -98,14 +90,6 @@ class AdminController extends Controller {
             'analyticsReservationRows' => $analyticsReservationRows,
             'analyticsRoomRows' => $analyticsRoomRows,
             'analyticsStudentRows' => $analyticsStudentRows,
-            'totalCapacity' => $totalCapacity,
-            'totalOccupiedBeds' => $totalOccupiedBeds,
-            'bedOccupancyRate' => $bedOccupancyRate,
-            'revenueByMethod' => $revenueByMethod,
-            'revenueByType' => $revenueByType,
-            'roomTypeStats' => $roomTypeStats,
-            'studentsByGender' => $studentsByGender,
-            'studentsByYear' => $studentsByYear,
             'newStudentsThisMonth' => $newStudentsThisMonth,
             'newReservationsThisMonth' => $newReservationsThisMonth,
             'activeTenants' => $activeTenants,
@@ -118,12 +102,6 @@ class AdminController extends Controller {
             'occupancyRate' => $occupancyRate,
             'roomStatus' => $this->db->fetchAll(
                 "SELECT s.status, COUNT(r.id) as count FROM (SELECT 'available' AS status UNION SELECT 'occupied' UNION SELECT 'reserved' UNION SELECT 'under_maintenance') s LEFT JOIN rooms r ON r.status = s.status GROUP BY s.status"
-            ),
-            'monthlyRevenue' => $this->db->fetchAll(
-                "SELECT DATE_FORMAT(COALESCE(paid_at, created_at), '%Y-%m') as month_key, DATE_FORMAT(COALESCE(paid_at, created_at), '%b') as month_label, SUM(amount_paid - COALESCE(refunded_amount, 0)) as total FROM payments WHERE status IN ('paid','partially_paid','refunded') AND amount_paid > 0 AND COALESCE(paid_at, created_at) >= DATE_SUB(CURDATE(), INTERVAL 13 MONTH) GROUP BY month_key, month_label ORDER BY month_key ASC"
-            ),
-            'monthlyReservations' => $this->db->fetchAll(
-                "SELECT DATE_FORMAT(created_at, '%Y-%m') as month_key, DATE_FORMAT(created_at, '%b') as month_label, COUNT(*) as total FROM reservations WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 13 MONTH) GROUP BY month_key, month_label ORDER BY month_key ASC"
             ),
             'recentActivity' => $this->db->fetchAll(
                 "SELECT al.*, u.email FROM activity_logs al LEFT JOIN users u ON al.user_id = u.id ORDER BY al.created_at DESC LIMIT 8"
