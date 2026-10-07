@@ -3,7 +3,7 @@ $hour = (int)serverDate('H');
 $greeting = $hour < 12 ? 'Good morning' : ($hour < 18 ? 'Good afternoon' : 'Good evening');
 $adminName = $_SESSION['user_email'] ?? 'Admin';
 
-$analyticsScript = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'analytics' . DIRECTORY_SEPARATOR . 'dashboard_analytics.py';
+$analyticsScript = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'analytics' . DIRECTORY_SEPARATOR . ';
 if (!file_exists($analyticsScript)) {
     $analyticsScript = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'app' . DIRECTORY_SEPARATOR . 'analytics' . DIRECTORY_SEPARATOR . 'dashboard_analytics.py';
 }
